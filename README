@@ -4,7 +4,8 @@ Earlier versions of the fieldgen code were called m3dcr/ppc8 and ppc9, also by D
 Earlier versions of the siggen code were by I-Yang Lee (in fortran), Karin Lagergren, and DCR.
 
 
-These codes are for unsegmented, cylindrically symmetric point-contact detectors.
+These codes are for unsegmented, cylindrically symmetric point-contact HPGe detectors.
+They will work for both p-type and n-type detectors.
 
 mjd_fieldgen:
     This code calculates the electric potential and weighting potential in
@@ -16,7 +17,9 @@ mjd_fieldgen:
     This is a stand-alone code and should not need any additional interface.
 
 mjd_siggen (and signal_tester):
-    This can be considered a library rather then a stand-alone program, although
+    This code uses the potentials calculated by mjd_fieldgen to simulate the signals
+    from energy depositions at specific locations inside the detector.
+    This can be considered a library rather than a stand-alone program, although
     signal_tester serves as a test/demonstration program as well as a template for
     how to use the package. You can write your own interface or input/output code
     to compile with the siggen modules. 
@@ -28,6 +31,14 @@ fieldgen and siggen codes. A well-commented example can be found inside the
 config_files directory.
 
 There is a simple Makefile to compile mjd_fieldgen and signal_tester.
+
+As written, signal_tester.c requires the gnu readline development package.
+    If you do not have that package and are unable to install it, you can simply
+     remove all references to readline and history in signal_tester.c and Makefile,
+     and replace the call to
+  rl_gets(ans, MAX_LINE);
+     with
+  fgets(ans, MAX_LINE, stdin);
 
 
 Please send questions and comments to radforddc@ornl.gov
