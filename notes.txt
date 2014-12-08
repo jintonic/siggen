@@ -1,0 +1,17 @@
+8 Dec 2014 - added capacitance calculation following WP calculation
+           - added proper handling of undepleted voxels in WP calculation
+	   - can now calculate realistic signals without full depletion
+
+
+TO DO:
+
+- measure cpu time and try to optimize 
+    - lots of redundant operations in efield_exists()
+    - if vel << grid size, calculate dq/dt, number of steps?
+    - can we combine calls grid_weights?
+    	  - ipt and w in setup? also rlen, zlen, etc?
+
+- add charge_size_slope, li_thickness, bulletization, etc
+
+- mjd_fieldgen: add partial voxel-filling for outer contact and ditch?
+
