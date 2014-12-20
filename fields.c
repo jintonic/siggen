@@ -75,8 +75,7 @@ int field_setup(MJD_Siggen_Setup *setup){
 static int efield_exists(cyl_pt pt, MJD_Siggen_Setup *setup){
   cyl_int_pt ipt;
   char ptstr[MAX_LINE];
-  int  i, j, ir, iz, rlen, zlen;
-
+  int  i, j, ir, iz;
   sprintf(ptstr, "(r,z) = (%.1f,%.1f)", pt.r, pt.z);
   if (outside_detector_cyl(pt, setup)){
     TELL_CHATTY("point %s is outside crystal\n", ptstr);
@@ -85,11 +84,9 @@ static int efield_exists(cyl_pt pt, MJD_Siggen_Setup *setup){
   ipt.r = (pt.r - setup->rmin)/setup->rstep;
   ipt.phi = 0;
   ipt.z = (pt.z - setup->zmin)/setup->zstep;
-  rlen = lrintf((setup->rmax - setup->rmin)/setup->rstep) + 1;
-  zlen = lrintf((setup->zmax - setup->zmin)/setup->zstep) + 1;
 
-  if (ipt.r < 0 || ipt.r + 1 >= rlen ||
-      ipt.z < 0 || ipt.z + 1 >= zlen){
+  if (ipt.r < 0 || ipt.r + 1 >= setup->rlen ||
+      ipt.z < 0 || ipt.z + 1 >= setup->zlen){
     TELL_CHATTY("point %s is outside wp table\n", ptstr);
     return 0;
   }
@@ -162,8 +159,12 @@ int drift_velocity(point pt, float q, vector *velo, MJD_Siggen_Setup *setup){
   if (nearest_field_grid_index(cyl, &ipt, setup) < 0) return -1;
   e = efield(cyl, ipt, setup);
   abse = vector_norm_cyl(e, &en);
-  cart_en.x = en.r * pt.x/cyl.r;
-  cart_en.y = en.r * pt.y/cyl.r;
+  if (cyl.r > 0.001) {
+    cart_en.x = en.r * pt.x/cyl.r;
+    cart_en.y = en.r * pt.y/cyl.r;
+  } else {
+    cart_en.x = cart_en.y = 0;
+  }
   cart_en.z = en.z;
 
   /* find location in table to interpolate / extrapolate from */
@@ -171,7 +172,7 @@ int drift_velocity(point pt, float q, vector *velo, MJD_Siggen_Setup *setup){
   v_lookup1 = setup->v_lookup + i;
   v_lookup2 = setup->v_lookup + i+1;
   if (abse == v_lookup1->e){ // FIXME: why is this a special case? 
-                              // slightly faster in rare cases, yes, but why?
+                             // slightly faster in rare cases, yes, but why?
     if (q > 0){ /*hole*/
       a = v_lookup1->ha;
       b = v_lookup1->hb;
@@ -193,12 +194,14 @@ int drift_velocity(point pt, float q, vector *velo, MJD_Siggen_Setup *setup){
       c = (v_lookup2->hc - v_lookup1->hc)*f+v_lookup1->hc;
       bp = (v_lookup2->hbp- v_lookup1->hbp)*f+v_lookup1->hbp;
       cp = (v_lookup2->hcp - v_lookup1->hcp)*f+v_lookup1->hcp;
+      setup->dv_dE = (v_lookup2->h100 - v_lookup1->h100)/(v_lookup2->e - v_lookup1->e);
     }else{
       a = (v_lookup2->ea - v_lookup1->ea)*f+v_lookup1->ea;
       b = (v_lookup2->eb- v_lookup1->eb)*f+v_lookup1->eb;
       c = (v_lookup2->ec - v_lookup1->ec)*f+v_lookup1->ec;
       bp = (v_lookup2->ebp- v_lookup1->ebp)*f+v_lookup1->ebp;
       cp = (v_lookup2->ecp - v_lookup1->ecp)*f+v_lookup1->ecp;
+      setup->dv_dE = (v_lookup2->e100 - v_lookup1->e100)/(v_lookup2->e - v_lookup1->e);
     }
   }
   /* velocity can vary from the direction of the el. field
@@ -210,6 +213,8 @@ int drift_velocity(point pt, float q, vector *velo, MJD_Siggen_Setup *setup){
   absv = a + b*en4 + c*en6;
   sign = (q < 0 ? -1 : 1);
   tempf = tcorr(q, abse, setup);
+  setup->dv_dE *= tempf;
+  setup->v_over_E = tempf * absv / abse;
   velo->x = sign*tempf*cart_en.x*(absv+bp*4*(cart_en.x*cart_en.x - en4)
 			    + cp*6*(POW4(cart_en.x) - en6));
   velo->y = sign*tempf*cart_en.y*(absv+bp*4*(cart_en.y*cart_en.y - en4)
@@ -269,7 +274,7 @@ static int nearest_field_grid_index(cyl_pt pt, cyl_int_pt *ipt,
   static cyl_int_pt last_ipt;
   static int     last_ret = -99;
   cyl_pt new_pt;
-  int    r, z;
+  int    dr, dz;
   float  d[3] = {0.0, -1.0, 1.0};
 
   if (last_ret != -99 &&
@@ -284,16 +289,16 @@ static int nearest_field_grid_index(cyl_pt pt, cyl_int_pt *ipt,
     last_ret = -1;
   } else{
     new_pt.phi = 0.0;
-    for (z=0; z<3; z++) {
-      new_pt.z = pt.z + d[z]*setup->zstep;
-      for (r=0; r<3; r++) {
-	new_pt.r = pt.r + d[r]*setup->rstep;
+    for (dz=0; dz<3; dz++) {
+      new_pt.z = pt.z + d[dz]*setup->zstep;
+      for (dr=0; dr<3; dr++) {
+	new_pt.r = pt.r + d[dr]*setup->rstep;
 	if (efield_exists(new_pt, setup)) {
 	  last_ipt.r = (new_pt.r - setup->rmin)/setup->rstep;
 	  last_ipt.phi = 0;
 	  last_ipt.z = (new_pt.z - setup->zmin)/setup->zstep;
 	  *ipt = last_ipt;
-	  if (r == 0 && z == 0) {
+	  if (dr == 0 && dz == 0) {
 	    last_ret = 0;
 	  } else {
 	    last_ret = 1;
@@ -436,7 +441,7 @@ static int setup_velo(MJD_Siggen_Setup *setup){
 static int setup_efield(MJD_Siggen_Setup *setup){
   FILE   *fp;
   char   line[MAX_LINE], *cp;
-  int    i, j, rlen, zlen, lineno;
+  int    i, j, lineno;
   float  v, eabs, er, ez;
   cyl_pt cyl, **efld;
 
@@ -445,24 +450,24 @@ static int setup_efield(MJD_Siggen_Setup *setup){
     return 1;
   }
   
-  rlen = lrintf((setup->rmax - setup->rmin)/setup->rstep) + 1;
-  zlen = lrintf((setup->zmax - setup->zmin)/setup->zstep) + 1;
-  TELL_CHATTY("rlen, zlen: %d, %d\n", rlen, zlen);
+  setup->rlen = lrintf((setup->rmax - setup->rmin)/setup->rstep) + 1;
+  setup->zlen = lrintf((setup->zmax - setup->zmin)/setup->zstep) + 1;
+  TELL_CHATTY("rlen, zlen: %d, %d\n", setup->rlen, setup->zlen);
 
   // here I assume that r, zlen never change from their initial values, which is reasonable
-  if ((efld = (cyl_pt **) malloc(rlen*sizeof(*efld))) == NULL) {
+  if ((efld = (cyl_pt **) malloc(setup->rlen*sizeof(*efld))) == NULL) {
     error("Malloc failed in setup_efield\n");
     fclose(fp);
     return 1;
   }
-  for (i = 0; i < rlen; i++){
-    if ((efld[i] = (cyl_pt *) malloc(zlen*sizeof(*efld[i]))) == NULL){
+  for (i = 0; i < setup->rlen; i++){
+    if ((efld[i] = (cyl_pt *) malloc(setup->zlen*sizeof(*efld[i]))) == NULL){
       error("Malloc failed in setup_efield\n");
       //NB: potential memory leak here.
       fclose(fp);
       return 1;
     }
-    memset(efld[i], 0, zlen*sizeof(*efld[i]));
+    memset(efld[i], 0, setup->zlen*sizeof(*efld[i]));
   }
   TELL_NORMAL("Reading electric field data from file: %s\n", setup->field_name);
   lineno = 0;
@@ -481,7 +486,7 @@ static int setup_efield(MJD_Siggen_Setup *setup){
     }
     i = lrintf((cyl.r - setup->rmin)/setup->rstep);
     j = lrintf((cyl.z - setup->zmin)/setup->zstep);
-    if (i < 0 || i >= rlen || j < 0 || j >= zlen) {
+    if (i < 0 || i >= setup->rlen || j < 0 || j >= setup->zlen) {
       error("Error in efield line %d, i = %d, j = %d\n", line, i, j);
       continue;
     }
@@ -496,7 +501,7 @@ static int setup_efield(MJD_Siggen_Setup *setup){
   fclose(fp);
 
   setup->efld = efld;
-  for (i = 0; i < rlen; i++) setup->efld[i] = efld[i];
+  for (i = 0; i < setup->rlen; i++) setup->efld[i] = efld[i];
   return 0;
 }
 
@@ -505,26 +510,26 @@ static int setup_efield(MJD_Siggen_Setup *setup){
 static int setup_wp(MJD_Siggen_Setup *setup){
   FILE   *fp;
   char   line[MAX_LINE], *cp;
-  int    i, j, rlen, zlen, lineno;
+  int    i, j, lineno;
   cyl_pt cyl;
   float  wp, **wpot;
 
-  rlen = lrintf((setup->rmax - setup->rmin)/setup->rstep) + 1;
-  zlen = lrintf((setup->zmax - setup->zmin)/setup->zstep) + 1;
-  TELL_CHATTY("rlen, zlen: %d, %d\n", rlen, zlen);
+  setup->rlen = lrintf((setup->rmax - setup->rmin)/setup->rstep) + 1;
+  setup->zlen = lrintf((setup->zmax - setup->zmin)/setup->zstep) + 1;
+  TELL_CHATTY("rlen, zlen: %d, %d\n", setup->rlen, setup->zlen);
 
   //assuming xlen, ylen, zlen never change as for setup_efld
-  if ((wpot = (float **) malloc(rlen*sizeof(*wpot))) == NULL){
+  if ((wpot = (float **) malloc(setup->rlen*sizeof(*wpot))) == NULL){
     error("Malloc failed in setup_wp\n");
     return 1;
   }
-  for (i = 0; i < rlen; i++){
-    if ((wpot[i] = (float *) malloc(zlen*sizeof(*wpot[i]))) == NULL){  
+  for (i = 0; i < setup->rlen; i++){
+    if ((wpot[i] = (float *) malloc(setup->zlen*sizeof(*wpot[i]))) == NULL){  
       error("Malloc failed in setup_wp\n");
       //NB: memory leak here.
       return 1;
     }
-    memset(wpot[i], 0, zlen*sizeof(*wpot[i]));
+    memset(wpot[i], 0, setup->zlen*sizeof(*wpot[i]));
   }
   if ((fp = fopen(setup->wp_name, "r")) == NULL){
     error("failed to open file: %s\n", setup->wp_name);
@@ -544,7 +549,7 @@ static int setup_wp(MJD_Siggen_Setup *setup){
     }
     i = lrintf((cyl.r - setup->rmin)/setup->rstep);
     j = lrintf((cyl.z - setup->zmin)/setup->zstep);
-    if (i < 0 || i >= rlen || j < 0 || j >= zlen) continue;
+    if (i < 0 || i >= setup->rlen || j < 0 || j >= setup->zlen) continue;
     if (outside_detector_cyl(cyl, setup)) continue;
     wpot[i][j] = wp;
   }
@@ -552,7 +557,7 @@ static int setup_wp(MJD_Siggen_Setup *setup){
   fclose(fp);
 
   setup->wpot = wpot;
-  for (i = 0; i < rlen; i++) setup->wpot[i] = wpot[i];
+  for (i = 0; i < setup->rlen; i++) setup->wpot[i] = wpot[i];
   return 0;
 }
 

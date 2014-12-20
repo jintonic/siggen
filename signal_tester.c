@@ -47,6 +47,8 @@ static int drift_paths(char *cmd, MJD_Siggen_Setup *setup);
 static int set_temp_local(char *cmd, MJD_Siggen_Setup *setup);
 static int set_tau(char *cmd, MJD_Siggen_Setup *setup);
 static int set_charge_size(char *cmd, MJD_Siggen_Setup *setup);
+static int set_diffusion(char *cmd, MJD_Siggen_Setup *setup);
+static int set_energy(char *cmd, MJD_Siggen_Setup *setup);
 static int set_verbosity(char *cmd, MJD_Siggen_Setup *setup);
 
 static struct{
@@ -61,6 +63,8 @@ static struct{
 	   {"st", set_temp_local, "st %f ; set temperture in K"},
 	   {"tau", set_tau, "tau %f ; set preamp integration time in ns"},
 	   {"ccs", set_charge_size, "ccs %f ; set charge cloud size in mm"},
+	   {"dif", set_diffusion, "dif 0/1 ; set diffusion off/on"},
+	   {"ene", set_energy, "ene %f ; set interaction energy in keV"},
 	   {"verb", set_verbosity, "verb %i ; set verbosity level [0/1/2]"},
            {"help", print_help, "help ; this output\nquit ; exit program"}};
 
@@ -327,6 +331,42 @@ static int set_charge_size(char *cmd, MJD_Siggen_Setup *setup){
   if (cs < 0) cs = 0;
   setup->charge_cloud_size = cs;
   printf("Charge cloud size set to %f mm\n", setup->charge_cloud_size);
+
+  return 0;
+}
+
+static int set_diffusion(char *cmd, MJD_Siggen_Setup *setup){
+  int  d;
+  char *endp;
+
+  d = (int) strtol(cmd, &endp, 0);
+  if (endp == cmd){
+    printf("cannot parse diffusion option: %s\n", cmd);
+    return 1;
+  }
+  if (d < 0) d = 0;
+  setup->use_diffusion = d;
+  if (d > 0) {
+    printf("Diffusion turned on\n");
+  } else {
+    printf("Diffusion turned off\n");
+  }
+
+  return 0;
+}
+
+static int set_energy(char *cmd, MJD_Siggen_Setup *setup){
+  float e;
+  char *endp;
+
+  e = strtod(cmd, &endp);
+  if (endp == cmd){
+    printf("cannot parse energy: %s\n", cmd);
+    return 1;
+  }
+  if (e < 0) e = 0;
+  setup->energy = e;
+  printf("Interaction energy set to %.1f keV\n", e);
 
   return 0;
 }

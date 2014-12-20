@@ -26,6 +26,8 @@
 #define MAX_ITS 50000     // default max number of iterations for relaxation
 #define MAX_ITS_FACTOR 2  // factor by which max iterations is reduced as grid is refined
 
+int report_config(FILE *fp_out, char *config_file_name);
+
 
 int main(int argc, char **argv)
 {
@@ -53,19 +55,19 @@ int main(int argc, char **argv)
   /* ---  ---  ---  ---  ---  ---  ---  ---  ---  ---  ---  ---  ---  --- */
 
   double **v[2], **eps, **eps_dr, **eps_dz, **vfraction, *s1, *s2; //, **fRC
-  char   **undepleted;
+  char   **undepleted, config_file_name[256];
   int    **bulk;
 
   double eps_sum, v_sum, mean, min, f, f1z, f2z, f1r, f2r;
-  double MM, e_over_E = 0.7072 * 4.0;   // actually (grid^2/4)*1e10*e/epsilon, grid in mm
+  double e_over_E = 0.7072 * 4.0;   // actually (grid^2/4)*1e10*e/epsilon, grid in mm
   float  dif, sum_dif=0, max_dif, a, b, c, grid = 0.5, dRC, fRC=0, dLC, fLC=0;
   float  E_r, E_z, bubble_volts=0, cs, gridstep[3];
   int    i, j, r, z, iter, old, new=0, zz, rr, istep, max_its;
   FILE   *file;
   time_t t0=0, t1, t2=0;
   double esum, esum2, pi=3.14159, Epsilon=(8.85*16.0/1000.0);  // permativity of Ge in pF/mm
-  double pinched_sum1, pinched_sum2;
-  int    gridfact, fully_depleted=0;
+  double pinched_sum1, pinched_sum2, *imp_ra, *imp_rm, *imp_z, S=0;
+  int    gridfact, fully_depleted=0, LL=L, RR=R, zmax, rmax;
 
   if (argc%2 != 1) {
     printf("Possible options:\n"
@@ -79,12 +81,13 @@ int main(int argc, char **argv)
   for (i=1; i<argc-1; i+=2) {
     if (strstr(argv[i], "-c")) {
       if (read_config(argv[i+1], &setup)) return 1;
+      strncpy(config_file_name, argv[i+1], sizeof(config_file_name));
 
       if (setup.xtal_grid < 0.001) setup.xtal_grid = 0.5;
       grid = setup.xtal_grid;
 
-      L  = lrint(setup.xtal_length/grid);
-      R  = lrint(setup.xtal_radius/grid);
+      L  = LL = lrint(setup.xtal_length/grid);
+      R  = RR = lrint(setup.xtal_radius/grid);
       // BRT = lrint(setup.top_bullet_radius/grid);
       // BRB = lrint(setup.bottom_bullet_radius/grid);
       LC = lrint(setup.pc_length/grid);
@@ -177,6 +180,9 @@ int main(int argc, char **argv)
       (bulk = malloc((L+1)*sizeof(*bulk))) == NULL ||
       (vfraction = malloc((L+1)*sizeof(*vfraction))) == NULL ||
       (undepleted = malloc((R+1)*sizeof(*undepleted))) == NULL ||
+      (imp_ra = malloc((R+1)*sizeof(*imp_ra))) == NULL ||
+      (imp_rm = malloc((R+1)*sizeof(*imp_rm))) == NULL ||
+      (imp_z = malloc((L+1)*sizeof(*imp_z))) == NULL ||
       (s1 = malloc((R+1)*sizeof(*s1))) == NULL ||
       (s2 = malloc((R+1)*sizeof(*s2))) == NULL) {
     printf("Malloc failed\n");
@@ -194,6 +200,7 @@ int main(int argc, char **argv)
     if ((undepleted[j] = malloc((L+1)*sizeof(**undepleted))) == NULL) ERR;
     memset(undepleted[j], ' ', (L+1)*sizeof(**undepleted));
   }
+  for (r=0; r<R+1; r++) imp_ra[r] = imp_rm[r] = 0.0;
 
   // weighting values for the relaxation alg. as a function of r
   s1[0] = 2.0;
@@ -229,6 +236,12 @@ int main(int argc, char **argv)
 	   gridstep[0], gridstep[1], grid, i, j);
   }
 
+  /* to be safe, initialize overall potential to bias voltage */
+  for (z=0; z<LL+1; z++) {
+    for (r=0; r<RR+1; r++) {
+      v[0][z][r] = v[1][z][r] = BV;
+    }
+  }
   if (setup.verbosity >= CHATTY)
     t0 = t2 = time(NULL);  // for calculating elapsed time later...
   max_its = MAX_ITS;
@@ -239,7 +252,6 @@ int main(int argc, char **argv)
     old = 1;
     new = 0;
     e_over_E = 0.7072 * 4.0 * grid * grid;  //  e/espilon0 * area of pixel in mm2
-    MM = 0.1 * M * grid;                    // impurity gradient in units of cm3*grid_size
 
     if (istep > 0) {
       /* not the first go-around, so the previous calculation was on a coarser grid...
@@ -249,13 +261,17 @@ int main(int argc, char **argv)
       f = 1.0 / (float) i;
       printf("\ngrid %.4f -> %.4f; ratio = %d %.3f\n\n",
 	     gridstep[istep-1], gridstep[istep], i, f);
-      for (z=0; z<L; z++) {
-	for (r=0; r<R; r++) {
+      for (z=0; z<L+1; z++) {
+	for (r=0; r<R+1; r++) {
 	  f1z = 0.0;
-	  for (zz=i*z; zz<i*z+i; zz++) {
+	  zmax = i*z+i;
+	  if (zmax > LL+1) zmax = LL+1;
+	  for (zz=i*z; zz<zmax; zz++) {
 	    f2z = 1.0 - f1z;
 	    f1r = 0.0;
-	    for (rr=i*r; rr<i*r+i; rr++) {
+	    rmax = i*r+i;
+	    if (rmax > RR+1) rmax = RR+1;
+	    for (rr=i*r; rr<rmax; rr++) {
 	      f2r = 1.0 - f1r;
 	      v[0][zz][rr] =      // linear interpolation of potential
 		f2z*f2r*v[1][z][r  ] + f1z*f2r*v[1][z+1][r  ] +
@@ -287,6 +303,20 @@ int main(int argc, char **argv)
     WO = lrint(setup.ditch_thickness/grid);
     // LiT = lrint(setup.Li_thickness/grid);
 
+    S = setup.impurity_surface * e_over_E / grid;
+    for (z=0; z<L+1; z++) {
+      imp_z[z] = (N + 0.1 * M * grid * (double) z + 
+		  setup.impurity_quadratic * (1.0 - (double) ((z-L/2)*(z-L/2)) /
+					      (double) (L*L/4))) * e_over_E;
+    }
+    if (setup.impurity_rpower > 0.1) {
+      for (r=0; r<R+1; r++) {
+	imp_ra[r] = setup.impurity_radial_add * e_over_E *
+	  pow((double) r / (double) R, setup.impurity_rpower);
+	imp_rm[r] = 1.0 + (setup.impurity_radial_mult - 1.0f) *
+	  pow((double) r / (double) R, setup.impurity_rpower);
+      }
+    }
     if (setup.verbosity >= NORMAL)
       printf("grid = %f  RC = %d  dRC = %f  LC = %d  dLC = %f\n\n",
 	     grid, RC, dRC, LC, dLC);
@@ -459,7 +489,8 @@ int main(int argc, char **argv)
 
 	  // calculate the intepolated mean potential and the effect of the space charge
 	  mean = v_sum / eps_sum;
-	  v[new][z][r] = mean + vfraction[z][r] * (N + MM * (float) z) * e_over_E;
+	  v[new][z][r] = mean + vfraction[z][r] * (imp_z[z]*imp_rm[r] + imp_ra[r]);
+	  if (z == 0) v[new][z][r] += vfraction[z][r] * S;
 	  // check to see if the pixel is undepleted
 	  if (vfraction[z][r] > 0.45) undepleted[r][z] = '.';
 	  if (v[new][z][r] <= 0.0f) {
@@ -554,7 +585,16 @@ int main(int argc, char **argv)
     } else {
       printf("Writing electric field data to file %s\n", setup.field_name);
     }
-    fprintf(file, "## r (mm), z (mm), V (V),  E (V/cm), E_r (V/cm), E_z (V/cm)\n");
+    /* copy configuration parameters to output file */
+    report_config(file, config_file_name);
+    fprintf(file, "#\n# HV bias in fieldgen: %.1f V\n", BV);
+    if (fully_depleted) {
+      fprintf(file, "# Detector is fully depleted.\n");
+    } else {
+      fprintf(file, "# Detector is not fully depleted.\n");
+      if (bubble_volts > 0.0f) fprintf(file, "# Pinch-off bubble at %.0f V potential\n", bubble_volts);
+    }
+    fprintf(file, "#\n## r (mm), z (mm), V (V),  E (V/cm), E_r (V/cm), E_z (V/cm)\n");
 
     for (r=0; r<R+1; r++) {
       for (z=0; z<L+1; z++) {
@@ -600,6 +640,12 @@ int main(int argc, char **argv)
   // max_its = 2*MAX_ITS;  // use twice as many iterations for WP; accuracy is more important?
   // if (setup.max_iterations > 0) max_its = 2*setup.max_iterations;
 
+  /* to be safe, initialize overall potential to 0 */
+  for (z=0; z<LL+1; z++) {
+    for (r=0; r<RR+1; r++) {
+      v[0][z][r] = v[1][z][r] = 0;
+    }
+  }
   for (istep=0; istep<3 && gridstep[istep]>0; istep++) {
     grid = gridstep[istep];
     old = 1;
@@ -615,13 +661,17 @@ int main(int argc, char **argv)
       f = 1.0 / (float) i;
       printf("\ngrid %.4f -> %.4f; ratio = %d %.3f\n\n",
 	     gridstep[istep-1], gridstep[istep], i, f);
-      for (z=0; z<L; z++) {
-	for (r=0; r<R; r++) {
+      for (z=0; z<L+1; z++) {
+	for (r=0; r<R+1; r++) {
 	  f1z = 0.0;
-	  for (zz=i*z; zz<i*z+i; zz++) {
+	  zmax = i*z+i;
+	  if (zmax > LL+1) zmax = LL+1;
+	  for (zz=i*z; zz<zmax; zz++) {
 	    f2z = 1.0 - f1z;
 	    f1r = 0.0;
-	    for (rr=i*r; rr<i*r+i; rr++) {
+	    rmax = i*r+i;
+	    if (rmax > RR+1) rmax = RR+1;
+	    for (rr=i*r; rr<rmax; rr++) {
 	      f2r = 1.0 - f1r;
 	      v[0][zz][rr] =      // linear interpolation
 		f2z*f2r*v[1][z][r  ] + f1z*f2r*v[1][z+1][r  ] +
@@ -882,19 +932,10 @@ int main(int argc, char **argv)
   printf("Calculating integrals of weighting field\n");
   esum = esum2 = 0;
   for (z=0; z<L; z++) {
-    for (r=0; r<R; r++) {
-      if (r==0) {
-	E_r = 0;
-      } else {
-	E_r = (v[new][z][r] - v[new][z][r+1])/(0.1*grid);
-      }
-      if (z==0) {
-	E_z = (v[new][z][r] - v[new][z+1][r])/(0.1*grid);
-      } else {
-	E_z = (v[new][z][r] - v[new][z+1][r])/(0.1*grid);
-      }
+    for (r=1; r<R; r++) {
+      E_r = (v[new][z][r] - v[new][z][r+1])/(0.1*grid);
+      E_z = (v[new][z][r] - v[new][z+1][r])/(0.1*grid);
       esum += (E_r*E_r + E_z*E_z) * (double) r;
-
       if ((r == RC && z <= LC) ||
 	  (r <= RC && z == LC)) {
 	esum2 += sqrt(E_r*E_r + E_z*E_z) * (double) r;
@@ -919,7 +960,16 @@ int main(int argc, char **argv)
     } else {
       printf("Writing weighting potential to file %s\n", setup.wp_name);
     }
-    fprintf(file, "## r (mm), z (mm), WP\n");
+    /* copy configuration parameters to output file */
+    report_config(file, config_file_name);
+    fprintf(file, "#\n# HV bias in fieldgen: %.1f V\n", BV);
+    if (fully_depleted) {
+      fprintf(file, "# Detector is fully depleted.\n");
+    } else {
+      fprintf(file, "# Detector is not fully depleted.\n");
+      if (bubble_volts > 0.0f) fprintf(file, "# Pinch-off bubble at %.0f V potential\n", bubble_volts);
+    }
+    fprintf(file, "#\n## r (mm), z (mm), WP\n");
     for (r=0; r<R+1; r++) {
       for (z=0; z<L+1; z++) {
 	fprintf(file, "%7.2f %7.2f %10.6f\n",
@@ -930,5 +980,22 @@ int main(int argc, char **argv)
     fclose(file);
   }
 
+  return 0;
+}
+
+int report_config(FILE *fp_out, char *config_file_name) {
+
+  char  *c, line[256];
+  FILE  *file;
+
+  fprintf(fp_out, "# Config file: %s\n", config_file_name);
+  if (!(file = fopen(config_file_name, "r"))) return 1;
+
+  while (fgets(line, sizeof(line), file)) {
+    if (strlen(line) < 3 || *line == ' ' || *line == '\t' || *line == '#') continue;
+    if ((c = strchr(line, '#')) || (c = strchr(line, '\n'))) *c = '\0';
+    fprintf(fp_out, "# %s\n", line);
+  }
+  fclose(file);
   return 0;
 }

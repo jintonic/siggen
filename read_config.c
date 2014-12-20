@@ -27,6 +27,11 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
     "xtal_grid",
     "impurity_z0",
     "impurity_gradient",
+    "impurity_quadratic",
+    "impurity_surface",
+    "impurity_radial_add",
+    "impurity_radial_mult",
+    "impurity_rpower",
     "xtal_HV",
     "drift_name",
     "field_name",
@@ -39,6 +44,7 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
     "charge_cloud_size",
     "cloud_size_slope",
     "use_diffusion",
+    "energy",
     "verbosity_level",
     "max_iterations",
     "write_field",
@@ -52,8 +58,10 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
   FILE  *file;
 
 
-  /* initialize everything to zero */
+  /* initialize everything to zero... */
   memset(setup, 0, sizeof(*setup));
+  /* ...except for impurity_radial_mult */
+  setup->impurity_radial_mult = 1.0f;  // 1.0 is neutral (no radial gradient)
 
   if (!(file = fopen(config_file_name, "r"))) {
     printf("\nERROR: config file %s does not exist?\n", config_file_name);
@@ -64,7 +72,7 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
   while (fgets(line, sizeof(line), file)) {
     n++;
     /* ignore comments and blank lines */
-    if (strlen(line) < 3 || *line == ' ' || *line == '#') continue;
+    if (strlen(line) < 3 || *line == ' ' || *line == '\t' || *line == '#') continue;
     for (i=0; (l=strlen(key_word[i])) > 0; i++) {
       if (!strncmp(line, key_word[i], l)) {
 	/* line starts with key_word[i] */
@@ -133,6 +141,16 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
 	  setup->impurity_z0 = fi;
 	} else if (strstr(key_word[i], "impurity_gradient")) {
 	  setup->impurity_gradient = fi;
+	} else if (strstr(key_word[i], "impurity_quadratic")) {
+	  setup->impurity_quadratic = fi;
+	} else if (strstr(key_word[i], "impurity_surface")) {
+	  setup->impurity_surface = fi;
+	} else if (strstr(key_word[i], "impurity_radial_add")) {
+	  setup->impurity_radial_add = fi;
+	} else if (strstr(key_word[i], "impurity_radial_mult")) {
+	  setup->impurity_radial_mult = fi;
+	} else if (strstr(key_word[i], "impurity_rpower")) {
+	  setup->impurity_rpower = fi;
 	} else if (strstr(key_word[i], "xtal_HV")) {
 	  setup->xtal_HV = fi;
 	} else if (strstr(key_word[i], "drift_name")) {
@@ -157,6 +175,8 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
 	  setup->cloud_size_slope = fi;
 	} else if (strstr(key_word[i], "use_diffusion")) {
 	  setup->use_diffusion = ii;
+	} else if (strstr(key_word[i], "energy")) {
+	  setup->energy = fi;
 	} else if (strstr(key_word[i], "max_iterations")) {
 	  setup->max_iterations = ii;
 	} else if (strstr(key_word[i], "write_field")) {

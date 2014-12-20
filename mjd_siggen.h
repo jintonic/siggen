@@ -74,7 +74,12 @@ typedef struct {
   // electric fields & weighing potentials
   float xtal_grid;            // grid size in mm for field files (either 0.5 or 0.1 mm)
   float impurity_z0;          // net impurity concentration at Z=0, in 1e10 e/cm3
-  float impurity_gradient;    // net impurity gardient, in 1e10 e/cm4
+  float impurity_gradient;    // net impurity gradient, in 1e10 e/cm4
+  float impurity_quadratic;   // net impurity difference from linear, at z=L/2, in 1e10 e/cm3
+  float impurity_surface;     // surface impurity of passivation layer, in 1e10 e/cm2
+  float impurity_radial_add;  // additive radial impurity at outside radius, in 1e10 e/cm3
+  float impurity_radial_mult; // multiplicative radial impurity at outside radius (neutral=1.0)
+  float impurity_rpower;      // power for radial impurity increase with radius
   float xtal_HV;              // detector bias for fieldgen, in Volts
   int   max_iterations;       // maximum number of iterations to use in mjd_fieldgen
   int   write_field;          // set to 1 to write V and E to output file, 0 otherwise
@@ -93,24 +98,27 @@ typedef struct {
   float step_time_out;        // length of time step for output signal, in ns
   //    nonzero values in the next few lines significantly slow down the code
   float charge_cloud_size;    // initial FWHM of charge cloud, in mm; set to zero for point charges
-  float cloud_size_slope;     // additional size of charge cloud per 1MeV energy deposited
   int   use_diffusion;        // set to 0/1 for ignore/add diffusion as the charges drift
+  float energy;               // set to energy > 0 to use charge cloud self-repulsion, in keV
 
   int   coord_type;           // set to CART or CYL for input point coordinate system
-  int   ntsteps_out;          //number of time steps in output signal
+  int   ntsteps_out;          // number of time steps in output signal
 
   // data for fields.c
   float rmin, rmax, rstep;
   float zmin, zmax, zstep;
+  int   rlen, zlen;           // dimensions of efld and wpot arrays
   int   v_lookup_len;
   struct velocity_lookup *v_lookup;
   cyl_pt **efld;
   float  **wpot;
   
   // data for calc_signal.c
-  point *dpath_e, *dpath_h;
-  float initial_vel, final_vel;
-  float final_charge_size_sq;
+  point *dpath_e, *dpath_h;      // electron and hole drift paths
+  float initial_vel, final_vel;  // initial and final drift velocities for charges collected to PC
+  float dv_dE;     // derivative of drift velocity with field ((mm/ns) / (V/cm))
+  float v_over_E;  // ratio of drift velocity to field ((mm/ns) / (V/cm))
+  double final_charge_size;     // in mm
 
 } MJD_Siggen_Setup;
 

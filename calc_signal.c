@@ -42,15 +42,27 @@
    for Si at 300K, 
    mu_h = 450 cm^2/V/s, mu_e = 1500 cm^2/V/s, so
    D_h = 12 cm^2/s, D_e = 39 cm^2/s
- */
-// germanium:
-//#define DIFFUSION_COEF_H (2 * 2.355 * 2.355 * 2.65e-5) // FWHM^2 (in mm^2) / ns
-#define DIFFUSION_COEF_H (2.9e-4 * setup->step_time_calc * 77.0 / setup->xtal_temp)
-#define DIFFUSION_COEF_E (3.7e-4 * setup->step_time_calc * 77.0 / setup->xtal_temp)
+*/
+/*  here are some definitions used for an old method, where I calculated FWHM-squared:
+// germanium:  2Dt = sigma^2; we want  FWHM^2 in mm^2 / ns
+#define TWO_TIMES_DIFFUSION_COEF_H \
+        (2.0 * 2.355*2.355 * 2.65e-5 * setup->step_time_calc * 77.0/setup->xtal_temp)
+#define TWO_TIMES_DIFFUSION_COEF_E \
+        (2.0 * 2.355*2.355 * 3.32e-5 * setup->step_time_calc * 77.0/setup->xtal_temp)
 // silicon:
-#define DIFFUSION_COEF_H_Si (1.3e-5 * setup->step_time_calc * 300.0 / setup->xtal_temp)
-#define DIFFUSION_COEF_E_Si (4.3e-5 * setup->step_time_calc * 300.0 / setup->xtal_temp)
-
+#define TWO_TIMES_DIFFUSION_COEF_H_Si \
+        (1.3e-5 * setup->step_time_calc * 300.0/setup->xtal_temp)
+#define TWO_TIMES_DIFFUSION_COEF_E_Si \
+        (4.3e-5 * setup->step_time_calc * 300.0/setup->xtal_temp)
+*/
+/* In the new method, I use dsigma/dt = D/sigma to calculate FWHM */
+#define DIFFUSION_COEF   (setup->v_over_E * 0.67)
+/* above is my own approximate parameterization of measurements of Jacoboni et al.
+   0.67 = 2.355 * 2.355 * 0.12    to get D in mm2/s, and scaled to FWHM2/sigma2
+   v_over_E = drift velocity / electric field   ~  mu
+   note that Einstein's equation is D = mu*kT/e
+   kT/e ~ 0.007/V ~ 0.07 mm/Vcm, => close enough to 0.12, okay
+ */
 
 /* prototypes for module-private functions*/
 static int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup);
@@ -144,21 +156,30 @@ int get_signal(point pt, float *signal_out, MJD_Siggen_Setup *setup) {
       TELL_CHATTY("Initial vel, size, dt = %f mm/ns, %f mm, %d steps\n",
 		  setup->initial_vel, setup->charge_cloud_size, dt);
       if (setup->use_diffusion) {
-	dt = (int) (1.5f + sqrt(setup->final_charge_size_sq) /
+	dt = (int) (1.5f + setup->final_charge_size /
 		    (setup->step_time_calc * setup->final_vel));
 	TELL_CHATTY("  Final vel, size, dt = %f mm/ns, %f mm, %d steps\n",
-		    setup->final_vel, sqrt(setup->final_charge_size_sq), dt);
+		    setup->final_vel, setup->final_charge_size, dt);
       }
       if (dt > 1) {
 	/* Gaussian */
 	w = ((float) dt) / 2.355;
-	l = dt/5;  // use l to speed up convolution of waveform with gaussian;
-	if (l < 1) l = 1;   // instead of using every 1-ns step, use steps of FWHM/5
+	l = dt/10;     // use l to speed up convolution of waveform with gaussian;
+	if (l < 1) {   // instead of using every 1-ns step, use steps of FWHM/10
+	  l = 1;
+	} else if (setup->step_time_out > setup->preamp_tau) {
+	  if (l > setup->step_time_out/setup->step_time_calc)
+	    l = setup->step_time_out/setup->step_time_calc;
+	} else {
+	  if (l > setup->preamp_tau/setup->step_time_calc)
+	    l = setup->preamp_tau/setup->step_time_calc;
+	}
+	// TELL_CHATTY(">> l: %d\n", l);
 	for (j = 0; j < tsteps; j++) {
 	  sum[j] = 1.0;
 	  tmp[j] = signal[j];
 	}
-	for (k = l; k < 2*dt; k+=l) {   // here is the speed-up in convolution
+	for (k = l; k < 2*dt; k+=l) {
 	  x = ((float) k)/w;
 	  y = exp(-x*x);
 	  for (j = 0; j < tsteps - k; j++){
@@ -201,17 +222,21 @@ static int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup
   char   tmpstr[MAX_LINE];
   point  new_pt;
   vector v, dx;
-  float  vel0, vel1 = 0, diffusion_coeff;
+  float  vel0, vel1 = 0;
+  // double diffusion_coeff;
+  double repulsion_fact = 0.0, ds2, ds3, dv, ds_dt;
   int    ntsteps, i, t, n, collect2pc, low_field=0;
 
   new_pt = pt;
   collect2pc = ((q > 0 && setup->impurity_z0 < 0) ||  // holes for p-type 
 		(q < 0 && setup->impurity_z0 > 0));   // electrons for n-type
+  /*
   if (q > 0) {
-    diffusion_coeff = DIFFUSION_COEF_H;
+    diffusion_coeff = TWO_TIMES_DIFFUSION_COEF_H;
   } else {
-    diffusion_coeff = DIFFUSION_COEF_E;
+    diffusion_coeff = TWO_TIMES_DIFFUSION_COEF_E;
   }
+  */
   ntsteps = setup->time_steps_calc;
   for (t = 0; drift_velocity(new_pt, q, &v, setup) >= 0; t++) { 
     if (q > 0) {
@@ -220,17 +245,52 @@ static int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup
       setup->dpath_e[t] = new_pt;
     }
     if (collect2pc) {
-      if (t == 1) {
+      if (t == 0) {
 	vel1 = setup->final_vel = setup->initial_vel = vector_length(v);
-	setup->final_charge_size_sq =
-	  setup->charge_cloud_size * setup->charge_cloud_size;
+	setup->final_charge_size = setup->charge_cloud_size;
+	if (setup->use_diffusion) {
+	  if (setup->final_charge_size < 0.01) setup->final_charge_size = 0.01;
+	  /* for a spherically symmetric charge cloud, the equivalent
+	     delta-E at a distance of 1 sigma from the cloud center is
+	     dE = Q/(4*pi*epsilon*sigma^2)  (Q is charge inside the 3D 1-sigma envelope)
+	     dE (V/cm) = Q (C) * 1/(4*pi*epsilon) (N m2 / C2) / sigma2 (mm2)
+	     1 V/m = 1 N/C
+	     dE (V/cm) = Q (C) * 1/(4*pi*epsilon) (V m / C) / sigma2 (mm2)
+	     dE (V/cm) = repulsion_fact * FWHM/sigma / (FWHM^2) (mm2), so
+	     repulsion_fact = (FWHM/sigma)^3 * Q (C) * 1/(4*pi*epsilon) (V m / C) * mm/m * mm/cm
+	  */
+	  if (setup->energy > 0.1) {  // set up charge cloud self-repulsion
+	    repulsion_fact = setup->energy * 0.67*067*0.67 / 0.003; // charge in 1 sigma (3D)
+	    repulsion_fact /= 6.241e18;        // convert to Coulombs
+	    repulsion_fact *= 9.0e13/16.0;     // 1/(4*pi*epsilon)  (N m2 / C2) * 1e4
+	    repulsion_fact *= 2.355*2.355*2.355;      // convert FWHM to sigma
+	  }
+	}
 	TELL_CHATTY("initial v: %f (%e %e %e)\n",
 		    setup->initial_vel, v.x, v.y, v.z);
       } else if (setup->use_diffusion) {
 	vel0 = vel1;
 	vel1 = vector_length(v);
-	setup->final_charge_size_sq = 
-	  setup->final_charge_size_sq * (vel1*vel1)/(vel0*vel0) + diffusion_coeff;
+	setup->final_charge_size *= vel1/vel0;  // effect of acceleration
+	// include effects of acceleration and diffusion on cloud size
+	dv = repulsion_fact * setup->dv_dE /        // effect of repulsion
+	        (setup->final_charge_size*setup->final_charge_size);
+	// FIXME? this next line could more more fine-grained
+	if (dv > 0.05) dv = 0.05;  // on account of drift velocity saturation
+	ds_dt = dv + DIFFUSION_COEF/setup->final_charge_size;  // effect of diffusion
+	if (ds_dt > 0.05 || ds_dt * setup->step_time_calc > 0.1) {
+	  // nonlinear growth due to small size; need more careful calculation
+	  TELL_CHATTY("ds_dt = %.2f; size = %.2f", ds_dt, setup->final_charge_size);
+	  // ds_dt = 0.05;  // artificially limit nonlinear growth
+	  ds2 = 2.0 * DIFFUSION_COEF * setup->step_time_calc; // increase^2 from diff.
+	  ds3 = (setup->final_charge_size*setup->final_charge_size *
+		 (setup->final_charge_size +
+		  3.0 * dv * setup->step_time_calc));         // FWHM^3 after repulsion
+	  setup->final_charge_size = sqrt(ds2 + pow(ds3, 0.6667)); 
+	  TELL_CHATTY(" -> %.2f\n", setup->final_charge_size);
+	} else {
+	  setup->final_charge_size +=  ds_dt * setup->step_time_calc;  // effect of diff. + rep.
+	}
       }
     }
 
@@ -285,8 +345,7 @@ static int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup
     }
     if (n == 0) n = 1; /* always drift at least one more step */
     // TELL_CHATTY(
-    TELL_NORMAL(
-		"q: %.1f t: %d n: %d ((%.2f %.2f %.2f)=>(%.2f %.2f %.2f))\n", 
+    TELL_NORMAL("q: %.1f t: %d n: %d ((%.2f %.2f %.2f)=>(%.2f %.2f %.2f))\n", 
 		q, t, n, pt.x, pt.y, pt.z, new_pt.x, new_pt.y, new_pt.z);
 
     if (n + t >= ntsteps){
