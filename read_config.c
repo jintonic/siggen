@@ -42,7 +42,6 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
     "step_time_calc",
     "step_time_out",
     "charge_cloud_size",
-    "cloud_size_slope",
     "use_diffusion",
     "energy",
     "verbosity_level",
@@ -171,8 +170,6 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
 	  setup->step_time_out = fi;
 	} else if (strstr(key_word[i], "charge_cloud_size")) {
 	  setup->charge_cloud_size = fi;
-	} else if (strstr(key_word[i], "cloud_size_slope")) {
-	  setup->cloud_size_slope = fi;
 	} else if (strstr(key_word[i], "use_diffusion")) {
 	  setup->use_diffusion = ii;
 	} else if (strstr(key_word[i], "energy")) {
