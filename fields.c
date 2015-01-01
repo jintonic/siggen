@@ -167,42 +167,25 @@ int drift_velocity(point pt, float q, vector *velo, MJD_Siggen_Setup *setup){
   }
   cart_en.z = en.z;
 
-  /* find location in table to interpolate / extrapolate from */
+  /* find location in table to interpolate from */
   for (i = 0; i < setup->v_lookup_len - 2 && abse > setup->v_lookup[i+1].e; i++);
   v_lookup1 = setup->v_lookup + i;
   v_lookup2 = setup->v_lookup + i+1;
-  if (abse == v_lookup1->e){ // FIXME: why is this a special case? 
-                             // slightly faster in rare cases, yes, but why?
-    if (q > 0){ /*hole*/
-      a = v_lookup1->ha;
-      b = v_lookup1->hb;
-      c = v_lookup1->hc;
-      bp = v_lookup1->hbp;
-      cp = v_lookup1->hcp;
-    }else{
-      a = v_lookup1->ea;
-      b = v_lookup1->eb;
-      c = v_lookup1->ec;
-      bp = v_lookup1->ebp;
-      cp = v_lookup1->ecp;
-    }
-  }else{/*interpolate/extrapolate*/
-    f = (abse - v_lookup1->e)/(v_lookup2->e - v_lookup1->e); 
-    if (q > 0){
-      a = (v_lookup2->ha - v_lookup1->ha)*f+v_lookup1->ha;
-      b = (v_lookup2->hb- v_lookup1->hb)*f+v_lookup1->hb;
-      c = (v_lookup2->hc - v_lookup1->hc)*f+v_lookup1->hc;
-      bp = (v_lookup2->hbp- v_lookup1->hbp)*f+v_lookup1->hbp;
-      cp = (v_lookup2->hcp - v_lookup1->hcp)*f+v_lookup1->hcp;
-      setup->dv_dE = (v_lookup2->h100 - v_lookup1->h100)/(v_lookup2->e - v_lookup1->e);
-    }else{
-      a = (v_lookup2->ea - v_lookup1->ea)*f+v_lookup1->ea;
-      b = (v_lookup2->eb- v_lookup1->eb)*f+v_lookup1->eb;
-      c = (v_lookup2->ec - v_lookup1->ec)*f+v_lookup1->ec;
-      bp = (v_lookup2->ebp- v_lookup1->ebp)*f+v_lookup1->ebp;
-      cp = (v_lookup2->ecp - v_lookup1->ecp)*f+v_lookup1->ecp;
-      setup->dv_dE = (v_lookup2->e100 - v_lookup1->e100)/(v_lookup2->e - v_lookup1->e);
-    }
+  f = (abse - v_lookup1->e)/(v_lookup2->e - v_lookup1->e);
+  if (q > 0){
+    a = (v_lookup2->ha - v_lookup1->ha)*f+v_lookup1->ha;
+    b = (v_lookup2->hb- v_lookup1->hb)*f+v_lookup1->hb;
+    c = (v_lookup2->hc - v_lookup1->hc)*f+v_lookup1->hc;
+    bp = (v_lookup2->hbp- v_lookup1->hbp)*f+v_lookup1->hbp;
+    cp = (v_lookup2->hcp - v_lookup1->hcp)*f+v_lookup1->hcp;
+    setup->dv_dE = (v_lookup2->h100 - v_lookup1->h100)/(v_lookup2->e - v_lookup1->e);
+  }else{
+    a = (v_lookup2->ea - v_lookup1->ea)*f+v_lookup1->ea;
+    b = (v_lookup2->eb- v_lookup1->eb)*f+v_lookup1->eb;
+    c = (v_lookup2->ec - v_lookup1->ec)*f+v_lookup1->ec;
+    bp = (v_lookup2->ebp- v_lookup1->ebp)*f+v_lookup1->ebp;
+    cp = (v_lookup2->ecp - v_lookup1->ecp)*f+v_lookup1->ecp;
+    setup->dv_dE = (v_lookup2->e100 - v_lookup1->e100)/(v_lookup2->e - v_lookup1->e);
   }
   /* velocity can vary from the direction of the el. field
      due to effect of crystal axes */
@@ -518,7 +501,7 @@ static int setup_wp(MJD_Siggen_Setup *setup){
   setup->zlen = lrintf((setup->zmax - setup->zmin)/setup->zstep) + 1;
   TELL_CHATTY("rlen, zlen: %d, %d\n", setup->rlen, setup->zlen);
 
-  //assuming xlen, ylen, zlen never change as for setup_efld
+  //assuming rlen, zlen never change as for setup_efld
   if ((wpot = (float **) malloc(setup->rlen*sizeof(*wpot))) == NULL){
     error("Malloc failed in setup_wp\n");
     return 1;

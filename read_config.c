@@ -195,6 +195,7 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
 	    printf("%s: %f\n", key_word[i], fi);
 	  }
 	}
+	break;
       }
     }
   }
