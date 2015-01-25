@@ -59,7 +59,8 @@ int main(int argc, char **argv)
   int    **bulk;
 
   double eps_sum, v_sum, mean, min, f, f1z, f2z, f1r, f2r;
-  double e_over_E = 0.7072 * 4.0;   // actually (grid^2/4)*1e10*e/epsilon, grid in mm
+  double e_over_E = 11.31; // e/epsilon
+                           // for 1 mm2, charge units 1e10 e/cm3, espilon = 16*epsilon0
   float  dif, sum_dif=0, max_dif, a, b, c, grid = 0.5, dRC, fRC=0, dLC, fLC=0;
   float  E_r, E_z, bubble_volts=0, cs, gridstep[3];
   int    i, j, r, z, iter, old, new=0, zz, rr, istep, max_its;
@@ -202,12 +203,21 @@ int main(int argc, char **argv)
   }
   for (r=0; r<R+1; r++) imp_ra[r] = imp_rm[r] = 0.0;
 
+  /* In the following we divide areas and volumes by pi
+    r_bin   rmax  A_top A_outside A_inside  volume  total_surf  out/top  tot/vol
+      0     1/2    1/4      1         0       1/4      1.5         4        6  << special case
+      1     3/2      2      3         1        2        8        3/2        4
+      2     5/2      4      5         3        4       16        5/4        4
+      3     7/2      6      7         5        6       24        7/6        4
+      r   r+0.5     2r    2r+1      2r-1      2r       8r     (2r+1)/2r     4
+                                                              = 1+0.5/r
+  */
   // weighting values for the relaxation alg. as a function of r
-  s1[0] = 2.0;
+  s1[0] = 4.0;
   s2[0] = 0.0;
-  for (r=1; r<R; r++) {
-    s1[r] = 1.0 + 0.5 / (float) r;   //  for r+1
-    s2[r] = 1.0 - 0.5 / (float) r;   //  for r-1
+  for (r=1; r<R+1; r++) {
+    s1[r] = 1.0 + 0.5 / (double) r;   //  for r+1
+    s2[r] = 1.0 - 0.5 / (double) r;   //  for r-1
   }
 
   /*
@@ -251,7 +261,11 @@ int main(int argc, char **argv)
     grid = gridstep[istep]; // grid size for this go-around
     old = 1;
     new = 0;
-    e_over_E = 0.7072 * 4.0 * grid * grid;  //  e/espilon0 * area of pixel in mm2
+    /*  e/espilon * area of pixel in mm2 / 4
+	for 1 mm2, charge units 1e10 e/cm3, espilon = 16*epsilon0
+	4.0 = surface area / volume of voxel in cylindrical (2D) coords
+	(this would be 6.0 in cartesian coords) */
+    e_over_E = 11.31 * grid*grid / 4.0;
 
     if (istep > 0) {
       /* not the first go-around, so the previous calculation was on a coarser grid...
@@ -490,7 +504,10 @@ int main(int argc, char **argv)
 	  // calculate the intepolated mean potential and the effect of the space charge
 	  mean = v_sum / eps_sum;
 	  v[new][z][r] = mean + vfraction[z][r] * (imp_z[z]*imp_rm[r] + imp_ra[r]);
-	  if (z == 0) v[new][z][r] += vfraction[z][r] * S;
+	  if (r == 0)  // special case where volume of voxel is 1/6 of area, not 1/4
+	    v[new][z][r] = mean + (vfraction[z][r] * (imp_z[z]*imp_rm[r] + imp_ra[r])) / 1.5;
+	  if (z == 0)
+	    v[new][z][r] += vfraction[z][r] * S;
 	  // check to see if the pixel is undepleted
 	  if (vfraction[z][r] > 0.45) undepleted[r][z] = '.';
 	  if (v[new][z][r] <= 0.0f) {
