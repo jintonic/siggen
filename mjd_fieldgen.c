@@ -66,7 +66,7 @@ int main(int argc, char **argv)
   int    i, j, r, z, iter, old, new=0, zz, rr, istep, max_its;
   FILE   *file;
   time_t t0=0, t1, t2=0;
-  double esum, esum2, pi=3.14159, Epsilon=(8.85*16.0/1000.0);  // permativity of Ge in pF/mm
+  double esum, esum2, pi=3.14159, Epsilon=(8.85*16.0/1000.0);  // permittivity of Ge in pF/mm
   double pinched_sum1, pinched_sum2, *imp_ra, *imp_rm, *imp_z, S=0;
   int    gridfact, fully_depleted=0, LL=L, RR=R, zmax, rmax;
 
@@ -201,7 +201,10 @@ int main(int argc, char **argv)
     if ((undepleted[j] = malloc((L+1)*sizeof(**undepleted))) == NULL) ERR;
     memset(undepleted[j], ' ', (L+1)*sizeof(**undepleted));
   }
-  for (r=0; r<R+1; r++) imp_ra[r] = imp_rm[r] = 0.0;
+  for (r=0; r<R+1; r++) {
+    imp_ra[r] = 0.0;
+    imp_rm[r] = 1.0;
+  }
 
   /* In the following we divide areas and volumes by pi
     r_bin   rmax  A_top A_outside A_inside  volume  total_surf  out/top  tot/vol
@@ -352,8 +355,8 @@ int main(int argc, char **argv)
     */
     for (z=0; z<L+1; z++) {
       for (r=0; r<R+1; r++) {
-	eps[z][r] = eps_dz[z][r] = eps_dr[z][r] = 16;   // permitivity inside Ge
-	if (z < LO  && r < RO && r > RO-WO-1) eps[z][r] =  1;  // permitivity inside vacuum
+	eps[z][r] = eps_dz[z][r] = eps_dr[z][r] = 16;   // permittivity inside Ge
+	if (z < LO  && r < RO && r > RO-WO-1) eps[z][r] =  1;  // permittivity inside vacuum
 	if (r > 0) eps_dr[z][r-1] = (eps[z][r-1]+eps[z][r])/2.0f;
 	if (z > 0) eps_dz[z-1][r] = (eps[z-1][r]+eps[z][r])/2.0f;
       }
@@ -754,8 +757,8 @@ int main(int argc, char **argv)
     */
     for (z=0; z<L+1; z++) {
       for (r=0; r<R+1; r++) {
-	eps[z][r] = eps_dz[z][r] = eps_dr[z][r] = 16;   // permitivity inside Ge
-	if (z < LO  && r < RO && r > RO-WO-1) eps[z][r] =  1;  // permitivity inside vacuum
+	eps[z][r] = eps_dz[z][r] = eps_dr[z][r] = 16;   // permittivity inside Ge
+	if (z < LO  && r < RO && r > RO-WO-1) eps[z][r] =  1;  // permittivity inside vacuum
 	if (r > 0) eps_dr[z][r-1] = (eps[z][r-1]+eps[z][r])/2.0f;
 	if (z > 0) eps_dz[z-1][r] = (eps[z-1][r]+eps[z][r])/2.0f;
       }
@@ -942,7 +945,7 @@ int main(int argc, char **argv)
   }
 
   /* --------------------- calculate capacitance ---------------------
-     1/2 * epsilon *integral(E^2) = 1/2 * C * V^2
+     1/2 * epsilon * integral(E^2) = 1/2 * C * V^2
      so    C = epsilon * integral(E^2) / V^2
      V = 1 volt
   */
@@ -960,8 +963,11 @@ int main(int argc, char **argv)
     }
   }
   esum  *= 2.0 * pi * 0.01 * Epsilon * pow(grid, 3.0);
-  // 0.01 converts (V/cm)^2 to (V/cm)^2, pow() converts to grid^3 to  mm3
-  esum2 *= 2.0 * pi * Epsilon * pow(grid, 3.0);
+  // Epsilon is in pF/mm
+  // 0.01 converts (V/cm)^2 to (V/mm)^2, pow() converts to grid^3 to mm3
+  // esum2 *= 2.0 * pi * Epsilon * pow(grid, 3.0);  // FIXME: * 0.1*grid*grid instead of pow()?
+  esum2 *= 2.0 * pi * 0.1 * Epsilon * pow(grid, 2.0);
+  // 0.1 converts (V/cm) to (V/mm),  grid^2 to  mm2
   printf("\n  >>  Calculated capacitance at %.0f V: %.3lf pF\n", BV, esum);
   if (fully_depleted) {
     printf("  >>  Alternative calculation of capacitance: %.3lf pF\n\n", esum2);
