@@ -953,19 +953,20 @@ int main(int argc, char **argv)
   esum = esum2 = 0;
   for (z=0; z<L; z++) {
     for (r=1; r<R; r++) {
-      E_r = (v[new][z][r] - v[new][z][r+1])/(0.1*grid);
-      E_z = (v[new][z][r] - v[new][z+1][r])/(0.1*grid);
+      E_r = eps_dr[z][r]/16.0 * (v[new][z][r] - v[new][z][r+1])/(0.1*grid);
+      E_z = eps_dz[z][r]/16.0 * (v[new][z][r] - v[new][z+1][r])/(0.1*grid);
       esum += (E_r*E_r + E_z*E_z) * (double) r;
       if ((r == RC && z <= LC) ||
-	  (r <= RC && z == LC)) {
-	esum2 += sqrt(E_r*E_r + E_z*E_z) * (double) r;
+	  (r <= RC && z == LC) ||
+	  (r == RC+1 && z <= LC+1) || // average over two different surfaces
+	  (r <= RC+1 && z == LC+1)) {
+	esum2 += 0.5 * sqrt(E_r*E_r + E_z*E_z) * (double) r;  // 0.5 since averaging over 2 surfaces
       }
     }
   }
   esum  *= 2.0 * pi * 0.01 * Epsilon * pow(grid, 3.0);
   // Epsilon is in pF/mm
   // 0.01 converts (V/cm)^2 to (V/mm)^2, pow() converts to grid^3 to mm3
-  // esum2 *= 2.0 * pi * Epsilon * pow(grid, 3.0);  // FIXME: * 0.1*grid*grid instead of pow()?
   esum2 *= 2.0 * pi * 0.1 * Epsilon * pow(grid, 2.0);
   // 0.1 converts (V/cm) to (V/mm),  grid^2 to  mm2
   printf("\n  >>  Calculated capacitance at %.0f V: %.3lf pF\n", BV, esum);
