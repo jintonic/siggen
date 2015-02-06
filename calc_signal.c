@@ -260,7 +260,7 @@ static int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup
 	     repulsion_fact = (FWHM/sigma)^3 * Q (C) * 1/(4*pi*epsilon) (V m / C) * mm/m * mm/cm
 	  */
 	  if (setup->energy > 0.1) {  // set up charge cloud self-repulsion
-	    repulsion_fact = setup->energy * 0.67*067*0.67 / 0.003; // charge in 1 sigma (3D)
+	    repulsion_fact = setup->energy * 0.67*0.67*0.67 / 0.003; // charge in 1 sigma (3D)
 	    repulsion_fact /= 6.241e18;        // convert to Coulombs
 	    repulsion_fact *= 9.0e13/16.0;     // 1/(4*pi*epsilon)  (N m2 / C2) * 1e4
 	    repulsion_fact *= 2.355*2.355*2.355;      // convert FWHM to sigma
