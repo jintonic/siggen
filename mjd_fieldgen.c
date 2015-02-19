@@ -670,7 +670,7 @@ int main(int argc, char **argv)
     grid = gridstep[istep];
     old = 1;
     new = 0;
-    // gridfact = integer ratio of currect grid step size to final grid step size
+    // gridfact = integer ratio of current grid step size to final grid step size
     gridfact = lrintf(grid / setup.xtal_grid);
 
     if (istep > 0) {
@@ -802,7 +802,7 @@ int main(int argc, char **argv)
 	  fLC = 1.0/(1.0 - dLC);
 	}
 
-	/* dtermine bulk regions where the detector is undepleted */
+	/* determine bulk regions where the detector is undepleted */
 	if (!fully_depleted) {
 	  if (undepleted[r*gridfact][z*gridfact] == '*') {
 	    bulk[z][r] = -1;	            // treat like part of point contact
@@ -950,7 +950,7 @@ int main(int argc, char **argv)
      V = 1 volt
   */
   printf("Calculating integrals of weighting field\n");
-  esum = esum2 = 0;
+  esum = esum2 = j = 0;
   for (z=0; z<L; z++) {
     for (r=1; r<R; r++) {
       E_r = eps_dr[z][r]/16.0 * (v[new][z][r] - v[new][z][r+1])/(0.1*grid);
@@ -960,6 +960,7 @@ int main(int argc, char **argv)
 	  (r <= RC && z == LC) ||
 	  (r == RC+1 && z <= LC+1) || // average over two different surfaces
 	  (r <= RC+1 && z == LC+1)) {
+	if (bulk[z+1][r+1] < 0) j = 1;
 	esum2 += 0.5 * sqrt(E_r*E_r + E_z*E_z) * (double) r;  // 0.5 since averaging over 2 surfaces
       }
     }
@@ -970,7 +971,7 @@ int main(int argc, char **argv)
   esum2 *= 2.0 * pi * 0.1 * Epsilon * pow(grid, 2.0);
   // 0.1 converts (V/cm) to (V/mm),  grid^2 to  mm2
   printf("\n  >>  Calculated capacitance at %.0f V: %.3lf pF\n", BV, esum);
-  if (fully_depleted) {
+  if (j==0) {
     printf("  >>  Alternative calculation of capacitance: %.3lf pF\n\n", esum2);
   } else {
     printf("\n");

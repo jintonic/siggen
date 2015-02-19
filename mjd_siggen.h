@@ -19,10 +19,10 @@
 #define TELL_CHATTY if (setup->verbosity >= CHATTY) tell
 
 /* Reference temperature for drift vel. corrections is 77K */
-#define REF_TEMP 77
+#define REF_TEMP 77.0
 /* max, min temperatures for allowed range */
-#define MIN_TEMP 77
-#define MAX_TEMP 110
+#define MIN_TEMP 40.0
+#define MAX_TEMP 120.0
 /* enum to identify cylindrical or cartesian coords */
 #define CYL 0
 #define CART 1

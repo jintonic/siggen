@@ -28,7 +28,6 @@ static int setup_efield(MJD_Siggen_Setup *setup);
 static int setup_wp(MJD_Siggen_Setup *setup);
 static int setup_velo(MJD_Siggen_Setup *setup);
 static int efield_exists(cyl_pt pt, MJD_Siggen_Setup *setup);
-static float tcorr(float q, float e, MJD_Siggen_Setup *setup);
 
 /* field_setup
    given a field directory file, read electic field and weighting
@@ -142,7 +141,7 @@ int drift_velocity(point pt, float q, vector *velo, MJD_Siggen_Setup *setup){
   cyl_int_pt ipt;
   int   i, sign;
   float abse, absv, f, a, b, c;
-  float bp, cp, en4, en6, tempf;
+  float bp, cp, en4, en6;
   struct velocity_lookup *v_lookup1, *v_lookup2;
 
   /*  DCR: replaced this with faster code below, saves calls to atan and tan
@@ -195,14 +194,12 @@ int drift_velocity(point pt, float q, vector *velo, MJD_Siggen_Setup *setup){
   en6 = POW6(cart_en.x) + POW6(cart_en.y) + POW6(cart_en.z);
   absv = a + b*en4 + c*en6;
   sign = (q < 0 ? -1 : 1);
-  tempf = tcorr(q, abse, setup);
-  setup->dv_dE *= tempf;
-  setup->v_over_E = tempf * absv / abse;
-  velo->x = sign*tempf*cart_en.x*(absv+bp*4*(cart_en.x*cart_en.x - en4)
+  setup->v_over_E = absv / abse;
+  velo->x = sign*cart_en.x*(absv+bp*4*(cart_en.x*cart_en.x - en4)
 			    + cp*6*(POW4(cart_en.x) - en6));
-  velo->y = sign*tempf*cart_en.y*(absv+bp*4*(cart_en.y*cart_en.y - en4)
+  velo->y = sign*cart_en.y*(absv+bp*4*(cart_en.y*cart_en.y - en4)
 			    + cp*6*(POW4(cart_en.y) - en6));
-  velo->z = sign*tempf*cart_en.z*(absv+bp*4*(cart_en.z*cart_en.z - en4)
+  velo->z = sign*cart_en.z*(absv+bp*4*(cart_en.z*cart_en.z - en4)
 			    + cp*6*(POW4(cart_en.z) - en6));
 #undef POW4
 #undef POW6
@@ -299,16 +296,26 @@ static int nearest_field_grid_index(cyl_pt pt, cyl_int_pt *ipt,
    set up drift velocity calculations (read in table)
 */
 static int setup_velo(MJD_Siggen_Setup *setup){
+  static int vlook_sz = 0;
+  static struct velocity_lookup *v_lookup;
+
   char  line[MAX_LINE], *c;
   FILE  *fp;
-  int   i, vlook_sz = 8, v_lookup_len;
-  struct velocity_lookup *v_lookup, *tmp, v, v0;
+  int   i, v_lookup_len;
+  struct velocity_lookup *tmp, v, v0;
   float sumb_e, sumc_e, sumb_h, sumc_h;
 
-  if ((v_lookup = (struct velocity_lookup *)
-       malloc(vlook_sz*sizeof(*v_lookup))) == NULL){
-    error("malloc failed in setup_velo\n");
-    return -1;
+  double be=1.3e7, bh=1.2e7, thetae=200.0, thetah=200.0;  // parameters for temperature correction
+  double pwre=-1.680, pwrh=-2.398, mue=5.66e7, muh=1.63e9; //     adopted for Ge   DCR Feb 2015
+  double mu_0_1, mu_0_2, v_s_1, v_s_2, E_c_1, E_c_2, e, f;
+
+  if (vlook_sz == 0) {
+    vlook_sz = 10;
+    if ((v_lookup = (struct velocity_lookup *)
+	 malloc(vlook_sz*sizeof(*v_lookup))) == NULL) {
+      error("malloc failed in setup_velo\n");
+      return -1;
+    }
   }
   if ((fp = fopen(setup->drift_name, "r")) == NULL){
     error("failed to open velocity lookup table file: '%s'\n", setup->drift_name);
@@ -323,10 +330,10 @@ static int setup_velo(MJD_Siggen_Setup *setup){
     return -1;
   }
   TELL_CHATTY("Drift velocity table:\n"
-	      "  e          e100    e110    e111    h100    h110    h111    ecorr    hcorr\n");   
+	      "  e          e100    e110    e111    h100    h110    h111\n");   
   for (v_lookup_len = 0; ;v_lookup_len++){
-    if (v_lookup_len == vlook_sz -1){
-      vlook_sz *= 2;
+    if (v_lookup_len == vlook_sz - 1){
+      vlook_sz += 10;
       if ((tmp = (struct velocity_lookup *)
 	   realloc(v_lookup, vlook_sz*sizeof(*v_lookup))) == NULL){
 	error("realloc failed in setup_velo\n");
@@ -335,39 +342,48 @@ static int setup_velo(MJD_Siggen_Setup *setup){
       }
       v_lookup = tmp;
     }
-    if (sscanf(line, "%f %f %f %f %f %f %f %f %f", 
+    if (sscanf(line, "%f %f %f %f %f %f %f", 
 	       &v_lookup[v_lookup_len].e,
 	       &v_lookup[v_lookup_len].e100,
 	       &v_lookup[v_lookup_len].e110,
 	       &v_lookup[v_lookup_len].e111,
 	       &v_lookup[v_lookup_len].h100,
 	       &v_lookup[v_lookup_len].h110,
-	       &v_lookup[v_lookup_len].h111,
-	       &v_lookup[v_lookup_len].ecorr,
-	       &v_lookup[v_lookup_len].hcorr) != 9){
-      if (sscanf(line, "%f %f %f %f %f %f %f", 
-		 &v_lookup[v_lookup_len].e,
-		 &v_lookup[v_lookup_len].e100,
-		 &v_lookup[v_lookup_len].e110,
-		 &v_lookup[v_lookup_len].e111,
-		 &v_lookup[v_lookup_len].h100,
-		 &v_lookup[v_lookup_len].h110,
-		 &v_lookup[v_lookup_len].h111) != 7){
-	break; //assume EOF
-      }else{   //no correction;
-	TELL_NORMAL("setting tcorr terms to 0\n");
-	v_lookup[v_lookup_len].ecorr = v_lookup[v_lookup_len].hcorr = 0;
-      }
+	       &v_lookup[v_lookup_len].h111) != 7){
+      break; //assume EOF
     }	   
     //v_lookup[v_lookup_len].e *= 100; /*V/m*/
     tmp = &v_lookup[v_lookup_len];
-    TELL_CHATTY("%10.3f%8.3f%8.3f%8.3f%8.3f%8.3f%8.3f%8.3f%8.3f\n",
-		tmp->e, tmp->e100, tmp->e110, tmp->e111, tmp->h100, tmp->h110,
-		tmp->h111, tmp->ecorr, tmp->hcorr);
+    TELL_CHATTY("%10.3f%8.3f%8.3f%8.3f%8.3f%8.3f%8.3f\n",
+		tmp->e, tmp->e100, tmp->e110, tmp->e111, tmp->h100, tmp->h110,tmp->h111);
+    line[0] = '#';
+    while ((line[0] == '#' || line[0] == '\0' ||
+	    line[0] == '\n' || line[0] == '\r') && c != NULL) c = fgets(line, MAX_LINE, fp);
+    if (c == NULL) break;
+    if (line[0] == 'e' || line[0] == 'h') break; /* no more velocities data;
+						    now reading temp correction data */
+  }
+
+  /* check for and decode temperature correction parameters */
+  while (line[0] == 'e' || line[0] == 'h') {
+    if (line[0] == 'e' &&
+	sscanf(line+2, "%lf %lf %lf %lf", 
+	       &mue, &pwre, &be, &thetae) != 4) break;//asume EOF
+    if (line[0] == 'h' &&
+	sscanf(line+2, "%lf %lf %lf %lf", 
+	       &muh, &pwrh, &bh, &thetah) != 4) break;//asume EOF
+    if (line[0] == 'e')
+      TELL_CHATTY("electrons: mu_0 = %.2e x T^%.4f  B = %.2e  Theta = %.0f\n",
+		  mue, pwre, be, thetae);
+    if (line[0] == 'h')
+      TELL_CHATTY("    holes: mu_0 = %.2e x T^%.4f  B = %.2e  Theta = %.0f\n",
+		  muh, pwrh, bh, thetah);
+
     line[0] = '#';
     while ((line[0] == '#' || line[0] == '\0') && c != NULL) c = fgets(line, MAX_LINE, fp);
     if (c == NULL) break;
   }
+
   if (v_lookup_len == 0){
     error("Failed to read velocity lookup table from file: %s\n", setup->drift_name);
     return -1;
@@ -385,6 +401,53 @@ static int setup_velo(MJD_Siggen_Setup *setup){
   }
   TELL_NORMAL("Drift velocity table has %d rows of data\n", v_lookup_len);
   fclose(fp);
+
+  /*
+    apply temperature dependence to mobilities;
+    see drift_velocities.doc and tempdep.c
+    The drift velocity reduces at higher temperature due to the increasing of
+    scattering with the lattice vibration. We used a model by M. Ali Omar and
+    L. Reggiani (Solid-State Electronics Vol. 30, No. 12 (1987) 1351) to
+    calculate the temperature dependence.
+  */
+  /* electrons */
+  TELL_NORMAL("Adjusting mobilities for temperature, from %.1f to %.1f\n", REF_TEMP, setup->xtal_temp);
+  TELL_CHATTY("Index  field  vel_factor\n");
+  mu_0_1 = mue * pow(REF_TEMP, pwre);
+  v_s_1 = be * sqrt(tanh(0.5 * thetae / REF_TEMP));
+  E_c_1 = v_s_1 / mu_0_1;
+  mu_0_2 = mue * pow(setup->xtal_temp, pwre);
+  v_s_2 = be * sqrt(tanh(0.5 * thetae / setup->xtal_temp));
+  E_c_2 = v_s_2 / mu_0_2;
+  for (i = 0; i < vlook_sz; i++){
+    e = v_lookup[i].e;
+    if (e < 1) continue;
+    f = (v_s_2 * (e/E_c_2) / sqrt(1.0 + (e/E_c_2) * (e/E_c_2))) /
+        (v_s_1 * (e/E_c_1) / sqrt(1.0 + (e/E_c_1) * (e/E_c_1)));
+    v_lookup[i].e100 *= f;
+    v_lookup[i].e110 *= f;
+    v_lookup[i].e111 *= f;
+    TELL_CHATTY("%2d %5.0f %f\n", i, e, f);
+  }
+
+  /* holes */
+  mu_0_1 = muh * pow(REF_TEMP, pwrh);
+  v_s_1 = bh * sqrt(tanh(0.5 * thetah / REF_TEMP));
+  E_c_1 = v_s_1 / mu_0_1;
+  mu_0_2 = muh * pow(setup->xtal_temp, pwrh);
+  v_s_2 = bh * sqrt(tanh(0.5 * thetah / setup->xtal_temp));
+  E_c_2 = v_s_2 / mu_0_2;
+  for (i = 0; i < vlook_sz; i++){
+    e = v_lookup[i].e;
+    if (e < 1) continue;
+    f = (v_s_2 * (e/E_c_2) / sqrt(1.0 + (e/E_c_2) * (e/E_c_2))) /
+        (v_s_1 * (e/E_c_1) / sqrt(1.0 + (e/E_c_1) * (e/E_c_1)));
+    v_lookup[i].h100 *= f;
+    v_lookup[i].h110 *= f;
+    v_lookup[i].h111 *= f;
+    TELL_CHATTY("%2d %5.0f %f\n", i, e, f);
+  }
+  /* end of temperature correction */
 
   for (i = 0; i < vlook_sz; i++){
     v = v_lookup[i];
@@ -412,6 +475,7 @@ static int setup_velo(MJD_Siggen_Setup *setup){
 
   setup->v_lookup = v_lookup;
   setup->v_lookup_len = v_lookup_len;
+
   return 0;
 }
 
@@ -485,6 +549,7 @@ static int setup_efield(MJD_Siggen_Setup *setup){
 
   setup->efld = efld;
   for (i = 0; i < setup->rlen; i++) setup->efld[i] = efld[i];
+
   return 0;
 }
 
@@ -541,6 +606,7 @@ static int setup_wp(MJD_Siggen_Setup *setup){
 
   setup->wpot = wpot;
   for (i = 0; i < setup->rlen; i++) setup->wpot[i] = wpot[i];
+
   return 0;
 }
 
@@ -563,31 +629,13 @@ int fields_finalize(MJD_Siggen_Setup *setup){
   return 1;
 }
 
-static float tcorr(float q, float abse, MJD_Siggen_Setup *setup){
-  float dt, res, vc, f;
-  int i;
-
-  for (i = 0; i < setup->v_lookup_len - 2 && abse > setup->v_lookup[i+1].e; i++);
-  f = (abse - setup->v_lookup[i].e)/(setup->v_lookup[i+1].e - setup->v_lookup[i].e); 
-  if (q > 0){
-    vc = (setup->v_lookup[i+1].hcorr - setup->v_lookup[i].hcorr)*f 
-      + setup->v_lookup[i].hcorr;
-  }else{
-    vc = (setup->v_lookup[i+1].ecorr - setup->v_lookup[i].ecorr)*f 
-      + setup->v_lookup[i].ecorr;
-  }
-
-  dt = setup->xtal_temp - REF_TEMP;
-  res = 1+vc*dt/100;
-
-  return res;
-}
-
 void set_temp(float temp, MJD_Siggen_Setup *setup){
   if (temp < MIN_TEMP || temp > MAX_TEMP){
     error("temperature out of range: %f\n", temp);
   }else{
     setup->xtal_temp = temp;
     error("temperature set to %f\n", temp);
+    /* re-read velocities and correct them to the new temperature value */
+    setup_velo(setup);
   }
 }
