@@ -32,6 +32,10 @@ int outside_detector(point pt, MJD_Siggen_Setup *setup){
       z <= setup->pc_length && r <= setup->pc_radius) return 1;
   if (setup->taper_length > 0 && z < setup->taper_length &&
       r > setup->zmax - setup->taper_length + z) return 1;
+  if (setup->ditch_depth > 0 && z < setup->ditch_depth  &&
+      setup->ditch_thickness > 0 && setup->wrap_around_radius > 0 &&
+      r < setup->wrap_around_radius &&
+      r > setup->wrap_around_radius - setup->ditch_thickness) return 1;
 
   return 0;
 }
@@ -51,6 +55,10 @@ int outside_detector_cyl(cyl_pt pt, MJD_Siggen_Setup *setup){
       z <= setup->pc_length && r <= setup->pc_radius) return 1;
   if (setup->taper_length > 0 && z < setup->taper_length &&
       r > setup->zmax - setup->taper_length + z) return 1;
+  if (setup->ditch_depth > 0 && z < setup->ditch_depth  &&
+      setup->ditch_thickness > 0 && setup->wrap_around_radius > 0 &&
+      r < setup->wrap_around_radius &&
+      r > setup->wrap_around_radius - setup->ditch_thickness) return 1;
 
   return 0;
 }

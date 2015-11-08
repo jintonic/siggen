@@ -509,7 +509,9 @@ int main(int argc, char **argv)
 	  v[new][z][r] = mean + vfraction[z][r] * (imp_z[z]*imp_rm[r] + imp_ra[r]);
 	  if (r == 0)  // special case where volume of voxel is 1/6 of area, not 1/4
 	    v[new][z][r] = mean + (vfraction[z][r] * (imp_z[z]*imp_rm[r] + imp_ra[r])) / 1.5;
-	  if (z == 0)
+	  if ((z == 0 && r > RC && r < RO-WO) ||        // passivated surface at z = 0
+              (z < LO && (r == RO || r == RO-WO-1)) ||  // passivated surface on sides of ditch
+              (z == LO && r <= RO && r >= RO-WO-1))     // passivated surface at top of ditch
 	    v[new][z][r] += vfraction[z][r] * S;
 	  // check to see if the pixel is undepleted
 	  if (vfraction[z][r] > 0.45) undepleted[r][z] = '.';
