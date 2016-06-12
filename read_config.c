@@ -19,6 +19,7 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
     "bottom_bullet_radius",
     "pc_length",
     "pc_radius",
+    "bulletize_PC",
     "taper_length",
     "wrap_around_radius",
     "ditch_depth",
@@ -95,7 +96,8 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
 		     !strncmp("verbosity_level", key_word[i], l) ||
 		     !strncmp("max_iterations", key_word[i], l) ||
 		     !strncmp("write_field", key_word[i], l) ||
-		     !strncmp("write_WP", key_word[i], l)) {
+		     !strncmp("write_WP", key_word[i], l) ||
+		     !strncmp("bulletize_PC", key_word[i], l)) {
 	    /* extract integer value */
 	    ok = sscanf(c, "%d", &ii);
 	    iint = 1;
@@ -124,6 +126,8 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
 	  setup->pc_length = fi;
 	} else if (strstr(key_word[i], "pc_radius")) {
 	  setup->pc_radius = fi;
+	} else if (strstr(key_word[i], "bulletize_PC")) {
+	  setup->bulletize_PC = ii;
 	} else if (strstr(key_word[i], "taper_length")) {
 	  setup->taper_length = fi;
 	} else if (strstr(key_word[i], "wrap_around_radius")) {

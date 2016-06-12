@@ -6,13 +6,13 @@
       - uses the same (single) config file as modified MJD siggen
       - added intelligent coarse grid / refinement of grid
       - added interpolation of RC and LC positions on the grid
+   June 2016: added optional bulletization of point contact
 
    TO DO:
-      - add bulletizations, especially for point contact
+      - add other bulletizations
       - add dead layer / Li thickness
       - on coarse grids, interpolate the position of L, R, LT, and the ditch
             (as is done now already for RC and LC)
-      - add optional capacitance calculation? (see e.g. ppco_cap.c)
 */
 
 #include <stdio.h>
@@ -54,14 +54,14 @@ int main(int argc, char **argv)
                  // 1: calculate the WP and write the values to ppc_wp.dat
   /* ---  ---  ---  ---  ---  ---  ---  ---  ---  ---  ---  ---  ---  --- */
 
-  double **v[2], **eps, **eps_dr, **eps_dz, **vfraction, *s1, *s2; //, **fRC
+  double **v[2], **eps, **eps_dr, **eps_dz, **vfraction, *s1, *s2;
   char   **undepleted, config_file_name[256];
-  int    **bulk;
-
+  int    **bulk, *rrc;
+  float  *drrc, *frrc;
   double eps_sum, v_sum, mean, min, f, f1z, f2z, f1r, f2r;
   double e_over_E = 11.31; // e/epsilon
                            // for 1 mm2, charge units 1e10 e/cm3, espilon = 16*epsilon0
-  float  dif, sum_dif=0, max_dif, a, b, c, grid = 0.5, dRC, fRC=0, dLC, fLC=0;
+  float  dif, sum_dif=0, max_dif, a, b, c, grid = 0.5, dRC, dLC, fLC=0;
   float  E_r, E_z, bubble_volts=0, cs, gridstep[3];
   int    i, j, r, z, iter, old, new=0, zz, rr, istep, max_its;
   FILE   *file;
@@ -155,8 +155,14 @@ int main(int argc, char **argv)
 	   grid * (float) R, grid * (float) L, grid * (float) LT,
 	   grid * (float) RO, grid * (float) LO, grid * (float) WO, BV, N, M);
   }
+  if (setup.bulletize_PC)
+    printf("   Contact: Radius x length: %.1f x %.1f mm, bulletized\n\n",
+	   grid * (float) RC, grid * (float) LC);
+  else
+    printf("   Contact: Radius x length: %.1f x %.1f mm, not bulletized\n\n",
+	   grid * (float) RC, grid * (float) LC);
 
-  if ((BV < 0 && N < 0) || (BV > 0 && N > 0)) {
+    if ((BV < 0 && N < 0) || (BV > 0 && N > 0)) {
     printf("ERROR: Expect bias and impurity to be opposite sign!\n");
     return 1;
   }
@@ -170,20 +176,24 @@ int main(int argc, char **argv)
   /* malloc arrays
      float v[2][L+5][R+5];
      float eps[L+1][R+1], eps_dr[L+1][R+1], eps_dz[L+1][R+1];
-     float s1[R], s2[R];
+     float vfraction[L+1][R+1], s1[R], s2[R], drrc[LC+2], drrc[LC+2];
      char  undepleted[R+1][L+1];
+     int   bulk[L+1][R+1], rrc[LC+2];
   */
   if ((v[0]   = malloc((L+5)*sizeof(*v[0]))) == NULL ||
       (v[1]   = malloc((L+5)*sizeof(*v[1]))) == NULL ||
-      (eps    = malloc((L+1)*sizeof(*eps))) == NULL ||
+      (eps    = malloc((L+1)*sizeof(*eps)))  == NULL ||
       (eps_dr = malloc((L+1)*sizeof(*eps_dr))) == NULL ||
       (eps_dz = malloc((L+1)*sizeof(*eps_dz))) == NULL ||
-      (bulk = malloc((L+1)*sizeof(*bulk))) == NULL ||
-      (vfraction = malloc((L+1)*sizeof(*vfraction))) == NULL ||
+      (bulk   = malloc((L+1)*sizeof(*bulk)))   == NULL ||
+      (vfraction  = malloc((L+1)*sizeof(*vfraction)))  == NULL ||
       (undepleted = malloc((R+1)*sizeof(*undepleted))) == NULL ||
       (imp_ra = malloc((R+1)*sizeof(*imp_ra))) == NULL ||
       (imp_rm = malloc((R+1)*sizeof(*imp_rm))) == NULL ||
       (imp_z = malloc((L+1)*sizeof(*imp_z))) == NULL ||
+      (rrc   = malloc((LC+2)*sizeof(*rrc)))  == NULL ||
+      (drrc  = malloc((LC+2)*sizeof(*drrc))) == NULL ||
+      (frrc  = malloc((LC+2)*sizeof(*frrc))) == NULL ||
       (s1 = malloc((R+1)*sizeof(*s1))) == NULL ||
       (s2 = malloc((R+1)*sizeof(*s2))) == NULL) {
     printf("Malloc failed\n");
@@ -314,6 +324,41 @@ int main(int argc, char **argv)
     // distance in grid units from PC radius to the middle of the nearest pixel:
     dRC = setup.pc_radius/grid - (float) RC;
     if (dRC < 0.05 && dRC > -0.05) dRC = 0;
+    /* set up bulletization inside point contact */
+    if (setup.bulletize_PC) {
+      for (z=0; z<=LC; z++) {
+        if (setup.pc_length <= setup.pc_radius) {  // LC <= RC; use LC as bulletization radius
+          a = setup.pc_radius - setup.pc_length;
+          b = z * grid;
+          c = setup.pc_length*setup.pc_length - b*b;
+          if (c < 0.0) c = 0;
+          c = a + sqrt(c);
+        } else {  // LC > RC; use RC as bulletization radius
+          if (z > LC-RC) {
+            a = setup.pc_length - setup.pc_radius;
+            b = z * grid - a;
+            c = setup.pc_radius*setup.pc_radius - b*b;
+            if (c < 0.0) c = 0;
+            c = sqrt(c);
+          } else {
+            c = setup.pc_radius;
+          }
+        }
+        rrc[z] = lrint(c/grid);
+        drrc[z] = c/grid - (float) rrc[z];
+        if (drrc[z] < 0.05 && drrc[z] > -0.05) drrc[z] = 0;
+        frrc[z] = 0;
+        // printf(">> z rrc drrc: %d %d %f\n", z, rrc[z], drrc[z]);
+      }
+      drrc[LC+1] = drrc[LC];
+    } else {  // no bulletization
+      for (z=0; z<=LC+1; z++) {
+        rrc[z] = RC;
+        drrc[z] = dRC;
+        frrc[z] = 0;
+      }
+    }
+    
     LT = lrint(setup.taper_length/grid);
     RO = lrint(setup.wrap_around_radius/grid);
     LO = lrint(setup.ditch_depth/grid);
@@ -378,18 +423,18 @@ int main(int argc, char **argv)
 	  bulk[z][r] = -1;               // value of v[*][z][r] is fixed...
 	  v[0][z][r] = v[1][z][r] = BV;  // at the bias voltage
 	}
-	// inside (point) contact:
-	else if (z <= LC && r <= RC) {
+	// inside (point) contact, with optional bulletization:
+	else if (z <= LC && r <= rrc[z]) {
 	  bulk[z][r] = -1;                // value of v[*][z][r] is fixed...
 	  v[0][z][r] = v[1][z][r] = 0;    // at zero volts
 	  /* radial edge of inside contact; if the PC radius is not in the middle
 	     of a pixel, we want to modify interpolation of V in surrounding pixels
 	  */
-	  if (r == RC && dRC < -0.05) {
+	  if (r == rrc[z] && drrc[z] < -0.05) {
 	    bulk[z][r] = 1;  // flag for radial edge of PC
-	    fRC = -1.0/dRC;  // interpolation weight for pixel at (r-1)
+	    frrc[z] = -1.0/drrc[z];  // interpolation weight for pixel at (r-1)
 	    // only part of the pixel has volume charge density, the rest is contact
-	    vfraction[z][r] *= -2.0*dRC;
+	    vfraction[z][r] *= -2.0*drrc[z];
 	  }
 	  /* z edge of inside contact; if the PC length is not in the middle
 	     of a pixel, we want to modify interpolation of V in surrounding pixels
@@ -398,7 +443,7 @@ int main(int argc, char **argv)
 	    bulk[z][r] = 2;  // flag for z edge of PC
 	    fLC = -1.0/dLC;  // interpolation weight for pixel at (z-1)
 	    // only part of the pixel has volume charge density, the rest is contact
-	    vfraction[z][r] *= -2.0*dRC;
+	    vfraction[z][r] *= -2.0*dLC;
 	  }
 	}
 	/* edges of inside contact; if the PC radius and/or legth is not in the middle
@@ -407,11 +452,11 @@ int main(int argc, char **argv)
 	   interpolation for the next point out
 	*/
 	// FIXME: Check for adjacent ditch
-	else if (z <= LC && r == RC+1 && dRC > 0.05) {
+	else if (z <= LC && r == rrc[z]+1 && drrc[z] > 0.05) {
 	  bulk[z][r] = 1;         // flag for radial edge of PC
-	  fRC = 1.0/(1.0 - dRC);  // interpolation weight for pixel at (r-1)
+	  frrc[z] = 1.0/(1.0 - drrc[z]);  // interpolation weight for pixel at (r-1)
 	}
-	else if (z == LC+1 && r <= RC && dLC > 0.05) {
+	else if (z == LC+1 && r <= rrc[z] && dLC > 0.05) {
 	  bulk[z][r] = 2;         // flag for z edge of PC
 	  fLC = 1.0/(1.0 - dLC);  // interpolation weight for pixel at (z-1)
 	}
@@ -462,8 +507,8 @@ int main(int argc, char **argv)
 	       use a modified weight for the interpolation to (r-1)
 	     */
 	    v_sum = v[old][z+1][r]*eps_dz[z][r] + v[old][z][r+1]*eps_dr[z][r]*s1[r] +
-	            v[old][z][r-1]*eps_dr[z][r-1]*s2[r]*fRC;
-	    eps_sum = eps_dz[z][r] + eps_dr[z][r]*s1[r] + eps_dr[z][r-1]*s2[r]*fRC;
+	            v[old][z][r-1]*eps_dr[z][r-1]*s2[r]*frrc[z];
+	    eps_sum = eps_dz[z][r] + eps_dr[z][r]*s1[r] + eps_dr[z][r-1]*s2[r]*frrc[z];
 	    min = fminf(v[old][z+1][r], v[old][z][r+1]);
 	    min = fminf(min, v[old][z][r-1]);
 	    if (z > 0) {
@@ -493,8 +538,8 @@ int main(int argc, char **argv)
 	    }
 	    // check for cases where the PC corner needs modification in both r and z
 	    if (z == LC && bulk[z-1][r] == 1) {
-	      v_sum += v[old][z][r-1]*eps_dr[z][r-1]*s2[r]*(fRC-1.0);
-	      eps_sum += eps_dr[z][r-1]*s2[r]*(fRC-1.0);
+	      v_sum += v[old][z][r-1]*eps_dr[z][r-1]*s2[r]*(frrc[z]-1.0);
+	      eps_sum += eps_dr[z][r-1]*s2[r]*(frrc[z]-1.0);
 	      min = fminf(min, v[old][z][r-1]);
 	    }
 
@@ -504,7 +549,7 @@ int main(int argc, char **argv)
 	    return 1;
 	  }
 
-	  // calculate the intepolated mean potential and the effect of the space charge
+	  // calculate the interpolated mean potential and the effect of the space charge
 	  mean = v_sum / eps_sum;
 	  v[new][z][r] = mean + vfraction[z][r] * (imp_z[z]*imp_rm[r] + imp_ra[r]);
 	  if (r == 0)  // special case where volume of voxel is 1/6 of area, not 1/4
@@ -718,6 +763,40 @@ int main(int argc, char **argv)
     if (dRC < 0.05 && dRC > -0.05) dRC = 0;
     printf("grid = %f  RC = %d  dRC = %f  LC = %d  dLC = %f\n\n",
 	   grid, RC, dRC, LC, dLC);
+    /* set up bulletization inside point contact */
+    if (setup.bulletize_PC) {
+      for (z=0; z<=LC; z++) {
+        if (setup.pc_length <= setup.pc_radius) {  // LC <= RC; use LC as bulletization radius
+          a = setup.pc_radius - setup.pc_length;
+          b = z * grid;
+          c = setup.pc_length*setup.pc_length - b*b;
+          if (c < 0.0) c = 0;
+          c = a + sqrt(c);
+        } else {  // LC > RC; use RC as bulletization radius
+          if (z > LC-RC) {
+            a = setup.pc_length - setup.pc_radius;
+            b = z * grid - a;
+            c = setup.pc_radius*setup.pc_radius - b*b;
+            if (c < 0.0) c = 0;
+            c = sqrt(c);
+          } else {
+            c = setup.pc_radius;
+          }
+        }
+        rrc[z] = lrint(c/grid);
+        drrc[z] = c/grid - (float) rrc[z];
+        if (drrc[z] < 0.05 && drrc[z] > -0.05) drrc[z] = 0;
+        frrc[z] = 0;
+      }
+      drrc[LC+1] = drrc[LC];
+    } else {  // no bulletization
+      for (z=0; z<=LC+1; z++) {
+        rrc[z] = RC;
+        drrc[z] = dRC;
+        frrc[z] = 0;
+      }
+    }
+    
     LT = lrint(setup.taper_length/grid);
     RO = lrint(setup.wrap_around_radius/grid);
     LO = lrint(setup.ditch_depth/grid);
@@ -747,7 +826,7 @@ int main(int argc, char **argv)
       /* ----- ----- */
       // inside contact:
       for (z=0; z<LC+1; z++) {
-	for (r=0; r<RC+1; r++) {
+	for (r=0; r<rrc[z]+1; r++) {
 	  v[0][z][r] = v[1][z][r] = 1.0;
 	}
       }
@@ -779,13 +858,13 @@ int main(int argc, char **argv)
 	  v[0][z][r] = v[1][z][r] = 0.0;   // to zero
 	}
 	// inside (point) contact:
-	else if (z <= LC && r <= RC) {
+	else if (z <= LC && r <= rrc[z]) {
 	  bulk[z][r] = -1;                 // value of v[*][z][r] is fixed...
 	  v[0][z][r] = v[1][z][r] = 1.0;   // to 1.0
 	  // radial edge of inside contact:
-	  if (r == RC && dRC < -0.05) {
+	  if (r == rrc[z] && drrc[z] < -0.05) {
 	    bulk[z][r] = 1;
-	    fRC = -1.0/dRC;
+	    frrc[z] = -1.0/drrc[z];
 	  }
 	  // z edge of inside contact:
 	  if (z == LC && dLC < -0.05) {
@@ -795,11 +874,11 @@ int main(int argc, char **argv)
 	}
 	// edge of inside contact:
 	// FIXME: Check for adjacent ditch
-	else if (z <= LC && r == RC+1 && dRC > 0.05) {
+	else if (z <= LC && r == rrc[z]+1 && drrc[z] > 0.05) {
 	  bulk[z][r] = 1;
-	  fRC = 1.0/(1.0 - dRC);
+	  frrc[z] = 1.0/(1.0 - drrc[z]);
 	}
-	else if (z == LC+1 && r <= RC && dLC > 0.05) {
+	else if (z == LC+1 && r <= rrc[z] && dLC > 0.05) {
 	  bulk[z][r] = 2;
 	  fLC = 1.0/(1.0 - dLC);
 	}
@@ -853,8 +932,8 @@ int main(int argc, char **argv)
 
 	  } else if (bulk[z][r] == 1) {    // interpolated radial edge of point contact
 	    v_sum = v[old][z+1][r]*eps_dz[z][r] + v[old][z][r+1]*eps_dr[z][r]*s1[r] +
-	      v[old][z][r-1]*eps_dr[z][r-1]*s2[r]*fRC;
-	    eps_sum = eps_dz[z][r] + eps_dr[z][r]*s1[r] + eps_dr[z][r-1]*s2[r]*fRC;
+	      v[old][z][r-1]*eps_dr[z][r-1]*s2[r]*frrc[z];
+	    eps_sum = eps_dz[z][r] + eps_dr[z][r]*s1[r] + eps_dr[z][r-1]*s2[r]*frrc[z];
 	    if (z > 0) {
 	      v_sum += v[old][z-1][r]*eps_dz[z-1][r];
 	      eps_sum += eps_dz[z-1][r];
@@ -874,8 +953,8 @@ int main(int argc, char **argv)
 	      eps_sum += eps_dr[z][r]*s1[r];
 	    }
 	    if (z == LC && bulk[z-1][r] == 1) {
-	      v_sum += v[old][z][r-1]*eps_dr[z][r-1]*s2[r]*(fRC-1.0);
-	      eps_sum += eps_dr[z][r-1]*s2[r]*(fRC-1.0);
+	      v_sum += v[old][z][r-1]*eps_dr[z][r-1]*s2[r]*(frrc[z]-1.0);
+	      eps_sum += eps_dr[z][r-1]*s2[r]*(frrc[z]-1.0);
 	    }
 
 	  } else if (bulk[z][r] == 3) {   // pinched-off
@@ -958,6 +1037,12 @@ int main(int argc, char **argv)
       E_r = eps_dr[z][r]/16.0 * (v[new][z][r] - v[new][z][r+1])/(0.1*grid);
       E_z = eps_dz[z][r]/16.0 * (v[new][z][r] - v[new][z+1][r])/(0.1*grid);
       esum += (E_r*E_r + E_z*E_z) * (double) r;
+      /*
+      if ((z <= LC && r == rrc[z]) ||
+	  (z == LC && r <= rrc[z]) ||
+	  (z <= LC+1 && r == rrc[z]+1) || // average over two different surfaces
+	  (z == LC+1 && r <= rrc[z]+1)) {
+      */
       if ((r == RC && z <= LC) ||
 	  (r <= RC && z == LC) ||
 	  (r == RC+1 && z <= LC+1) || // average over two different surfaces

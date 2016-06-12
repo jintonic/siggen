@@ -84,6 +84,7 @@ typedef struct {
   int   max_iterations;       // maximum number of iterations to use in mjd_fieldgen
   int   write_field;          // set to 1 to write V and E to output file, 0 otherwise
   int   write_WP;             // set to 1 to calculate WP and write it to output file, 0 otherwise
+  int   bulletize_PC;         // set to 1 for inside of point contact hemispherical, 0 for cylindrical
 
   // file names
   char drift_name[256];       // drift velocity lookup table
