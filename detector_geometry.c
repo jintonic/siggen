@@ -33,10 +33,10 @@ int outside_detector(point pt, MJD_Siggen_Setup *setup){
     if (!setup->bulletize_PC) return 1;
     if (setup->pc_length > setup->pc_radius) {
       a = setup->pc_length - setup->pc_radius;
-      if (z > a && SQ(z-a) + SQ(r) > SQ(setup->pc_radius)) return 1;
+      if (z < a || SQ(z-a) + SQ(r) < SQ(setup->pc_radius)) return 1;
     } else {
       a = setup->pc_radius - setup->pc_length;
-      if (r > a && SQ(z) + SQ(r-a) > SQ(setup->pc_length)) return 1;
+      if (r < a || SQ(z) + SQ(r-a) < SQ(setup->pc_length)) return 1;
     }
     return 0;
   }
@@ -66,10 +66,10 @@ int outside_detector_cyl(cyl_pt pt, MJD_Siggen_Setup *setup){
     if (!setup->bulletize_PC) return 1;
     if (setup->pc_length > setup->pc_radius) {
       a = setup->pc_length - setup->pc_radius;
-      if (z > a && SQ(z-a) + SQ(r) > SQ(setup->pc_radius)) return 1;
+      if (z < a || SQ(z-a) + SQ(r) < SQ(setup->pc_radius)) return 1;
     } else {
       a = setup->pc_radius - setup->pc_length;
-      if (r > a && SQ(z) + SQ(r-a) > SQ(setup->pc_length)) return 1;
+      if (r < a || SQ(z) + SQ(r-a) < SQ(setup->pc_length)) return 1;
     }
     return 0;
   }
