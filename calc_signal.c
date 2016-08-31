@@ -65,7 +65,7 @@
  */
 
 /* prototypes for module-private functions*/
-static int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup);
+//static int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup);
 //static float charge_trapping(vector dx, float q); //trapping
 
 /* signal_calc_init
@@ -217,7 +217,7 @@ int get_signal(point pt, float *signal_out, MJD_Siggen_Setup *setup) {
    Generates the signal originating at point pt, for charge q
    returns 0 for success
 */
-static int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup) {
+int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup) {
   static float wpot, wpot_old, dwpot;
   char   tmpstr[MAX_LINE];
   point  new_pt;

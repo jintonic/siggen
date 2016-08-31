@@ -42,6 +42,12 @@ int signal_calc_init(char *config_file_name, MJD_Siggen_Setup *setup);
  */
 int get_signal(point pt, float *signal, MJD_Siggen_Setup *setup);
 
+/* make_signal
+   Generates the signal originating at point pt, for charge q
+   returns 0 for success
+*/
+int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup);
+
 /* signal_calc_finalize
  * Clean up
  */
