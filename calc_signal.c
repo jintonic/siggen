@@ -181,17 +181,17 @@ int get_signal(point pt, float *signal_out, MJD_Siggen_Setup *setup) {
 	}
 	for (k = l; k < 2*dt; k+=l) {
 	  x = ((float) k)/w;
-	  y = exp(-x*x);
+	  y = exp(-x*x/2.0);
 	  for (j = 0; j < tsteps - k; j++){
 	    sum[j] += y;
 	    tmp[j] += signal[j+k] * y;
 	    sum[j+k] += y;
 	    tmp[j+k] += signal[j] * y;
 	  }
-	  for (j = 0; j < tsteps; j++){
-	    signal[j] = tmp[j]/sum[j];
-	  }
 	}
+        for (j = 0; j < tsteps; j++){
+          signal[j] = tmp[j]/sum[j];
+        }
       }
     }
 
