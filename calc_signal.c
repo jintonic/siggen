@@ -310,6 +310,7 @@ int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup) {
 		  pt_to_str(tmpstr, MAX_LINE, new_pt));
       return -1;
     }
+    if (wpot < 0.0) wpot = 0.0;
     TELL_CHATTY(" -> wp: %.4f\n", wpot);
     if (t > 0) signal[t] += q*(wpot - wpot_old);
     // FIXME? Hack added by DCR to deal with undepleted point contact
