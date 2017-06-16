@@ -6,16 +6,16 @@
 	       - added surface charge, quadratic charge profile, radial charge profiles
 	       - added logging of config params to start of field and WP files
 
-TO DO:
+June 2016:  added optional bulletization of point contact
 
+
+TO DO:
 - measure cpu time and try to optimize 
     - lots of redundant operations in efield_exists()
     - if vel << grid size, calculate dq/dt, number of steps?
     - can we combine calls grid_weights?
     	  - ipt and w in setup? also rlen, zlen, etc?
 
-- add li_thickness, bulletization, etc
-- especially important to add bulletization of point contact in fieldgen!
-
+- add li_thickness, top bulletization
 - mjd_fieldgen: add partial voxel-filling for outer contact and ditch?
 
