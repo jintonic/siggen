@@ -101,6 +101,7 @@ typedef struct {
   float charge_cloud_size;    // initial FWHM of charge cloud, in mm; set to zero for point charges
   int   use_diffusion;        // set to 0/1 for ignore/add diffusion as the charges drift
   float energy;               // set to energy > 0 to use charge cloud self-repulsion, in keV
+  double charge_trapping_per_step;   // factor for charge remaining at each time step, typically > 0.999995
 
   int   coord_type;           // set to CART or CYL for input point coordinate system
   int   ntsteps_out;          // number of time steps in output signal

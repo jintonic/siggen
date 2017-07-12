@@ -45,6 +45,7 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
     "charge_cloud_size",
     "use_diffusion",
     "energy",
+    "charge_trapping_per_step",
     "verbosity_level",
     "max_iterations",
     "write_field",
@@ -62,6 +63,8 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
   memset(setup, 0, sizeof(*setup));
   /* ...except for impurity_radial_mult */
   setup->impurity_radial_mult = 1.0f;  // 1.0 is neutral (no radial gradient)
+  /* ...and charge trapping */
+  setup->charge_trapping_per_step = 1.0;  // 1.0 is no trapping
 
   if (!(file = fopen(config_file_name, "r"))) {
     printf("\nERROR: config file %s does not exist?\n", config_file_name);
@@ -178,6 +181,8 @@ int read_config(char *config_file_name, MJD_Siggen_Setup *setup) {
 	  setup->use_diffusion = ii;
 	} else if (strstr(key_word[i], "energy")) {
 	  setup->energy = fi;
+	} else if (strstr(key_word[i], "charge_trapping_per_step")) {
+	  setup->charge_trapping_per_step = fi;
 	} else if (strstr(key_word[i], "max_iterations")) {
 	  setup->max_iterations = ii;
 	} else if (strstr(key_word[i], "write_field")) {

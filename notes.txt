@@ -8,6 +8,8 @@
 
 June 2016:  added optional bulletization of point contact
 
+Jult 2017:  added charge trapping to config file
+
 
 TO DO:
 - measure cpu time and try to optimize 

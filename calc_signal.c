@@ -64,10 +64,6 @@
    kT/e ~ 0.007/V ~ 0.07 mm/Vcm, => close enough to 0.12, okay
  */
 
-/* prototypes for module-private functions*/
-//static int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup);
-//static float charge_trapping(vector dx, float q); //trapping
-
 /* signal_calc_init
    read setup from configuration file,
    then read the electric field and weighting potential,
@@ -322,7 +318,8 @@ int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup) {
 
     dx = vector_scale(v, setup->step_time_calc);
     new_pt = vector_add(new_pt, dx);
-    // q = charge_trapping(dx, q); //FIXME
+    // do charge trapping
+    q *= setup->charge_trapping_per_step;
   }
   if (t == 0) {
     TELL_CHATTY("The starting point %s is outside the field.\n",
@@ -367,7 +364,8 @@ int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup) {
     dx = vector_scale(v, setup->step_time_calc);
     for (i = 0; i < n; i++){
       signal[i+t] += q*dwpot;
-      // q = charge_trapping(dx, q); //FIXME
+      // do charge trapping
+      q *= setup->charge_trapping_per_step;
     }
   }
   TELL_CHATTY("q:%.2f pt: %s\n", q, pt_to_str(tmpstr, MAX_LINE, pt));
@@ -375,13 +373,6 @@ int make_signal(point pt, float *signal, float q, MJD_Siggen_Setup *setup) {
 
   return 0;
 }
-
-//FIXME -- placeholder function. Even parameter list is dodgy
-/*
-static float charge_trapping(vector dx, float q){
-  return q;
-}
-*/
 
 int rc_integrate(float *s_in, float *s_out, float tau, int time_steps){
   int   j;
