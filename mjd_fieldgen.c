@@ -7,6 +7,7 @@
       - added intelligent coarse grid / refinement of grid
       - added interpolation of RC and LC positions on the grid
    June 2016: added optional bulletization of point contact
+   Nov  2017: added top bulletization
 
    TO DO:
       - add other bulletizations
@@ -43,6 +44,7 @@ int main(int argc, char **argv)
   int   RO = 0;  // radius of wrap-around outer (Li) contact, in grid lengths
   int   LO = 0;  // length of ditch next to wrap-around outer (Li) contact, in grid lengths
   int   WO = 0;  // width of ditch next to wrap-around outer (Li) contact, in grid lengths
+  int   BRT = 0; // radius of bulletization at top of crystal
   float BV = 0;  // bias voltage
   float N = 1;   // charge density at z=0 in units of e+10/cm3
   float M = 0;   // charge density gradient, in units of e+10/cm4
@@ -68,7 +70,9 @@ int main(int argc, char **argv)
   time_t t0=0, t1, t2=0;
   double esum, esum2, pi=3.14159, Epsilon=(8.85*16.0/1000.0);  // permittivity of Ge in pF/mm
   double pinched_sum1, pinched_sum2, *imp_ra, *imp_rm, *imp_z, S=0;
-  int    gridfact, fully_depleted=0, LL=L, RR=R, zmax, rmax;
+  int    gridfact, fully_depleted=0, LL=L, RR=R, zmax, rmax, vminr=0, vminz=0;
+  double **vsave;
+
 
   if (argc%2 != 1) {
     printf("Possible options:\n"
@@ -89,7 +93,7 @@ int main(int argc, char **argv)
 
       L  = LL = lrint(setup.xtal_length/grid);
       R  = RR = lrint(setup.xtal_radius/grid);
-      // BRT = lrint(setup.top_bullet_radius/grid);
+      BRT = lrint(setup.top_bullet_radius/grid);
       // BRB = lrint(setup.bottom_bullet_radius/grid);
       LC = lrint(setup.pc_length/grid);
       RC = lrint(setup.pc_radius/grid);
@@ -166,6 +170,9 @@ int main(int argc, char **argv)
     printf("ERROR: Expect bias and impurity to be opposite sign!\n");
     return 1;
   }
+  if (BRT > 0)
+    printf("   Radius of top-of-crystal bulletization is %.1f mm\n\n", grid * (float) BRT);
+
   if (N > 0) {
     // swap polarity for n-type material; this lets me assume all voltages are positive
     BV = -BV;
@@ -195,7 +202,9 @@ int main(int argc, char **argv)
       (drrc  = malloc((LC+2)*sizeof(*drrc))) == NULL ||
       (frrc  = malloc((LC+2)*sizeof(*frrc))) == NULL ||
       (s1 = malloc((R+1)*sizeof(*s1))) == NULL ||
-      (s2 = malloc((R+1)*sizeof(*s2))) == NULL) {
+      (s2 = malloc((R+1)*sizeof(*s2))) == NULL ||
+      (vsave = malloc((LC+2)*sizeof(*vsave))) == NULL
+      ) {
     printf("Malloc failed\n");
     return 1;
   }
@@ -207,6 +216,7 @@ int main(int argc, char **argv)
   for (j=0; j<L+1; j++) if ((eps_dz[j] = malloc((R+1)*sizeof(**eps_dz))) == NULL) ERR;
   for (j=0; j<L+1; j++) if ((bulk[j] = malloc((R+1)*sizeof(**bulk))) == NULL) ERR;
   for (j=0; j<L+1; j++) if ((vfraction[j] = malloc((R+1)*sizeof(**vfraction))) == NULL) ERR;
+  for (j=0; j<LC+2; j++) if ((vsave[j]  = malloc((RC+2)*sizeof(**vsave)))  == NULL) ERR;
   for (j=0; j<R+1; j++) {
     if ((undepleted[j] = malloc((L+1)*sizeof(**undepleted))) == NULL) ERR;
     memset(undepleted[j], ' ', (L+1)*sizeof(**undepleted));
@@ -314,7 +324,7 @@ int main(int argc, char **argv)
     // recalculate geometry dimensions in units of the current grid size
     L  = lrint(setup.xtal_length/grid);
     R  = lrint(setup.xtal_radius/grid);
-    // BRT = lrint(setup.top_bullet_radius/grid);
+    BRT = lrint(setup.top_bullet_radius/grid);
     // BRB = lrint(setup.bottom_bullet_radius/grid);
     LC = lrint(setup.pc_length/grid);
     // distance in grid units from PC length to the middle of the nearest pixel:
@@ -419,7 +429,9 @@ int main(int argc, char **argv)
 	if (z == L ||
 	    r == R ||
 	    r >= z + R - LT ||       // taper
-	    (z == 0 && r >= RO)) {   // wrap-around
+	    (z == 0 && r >= RO) ||   // wrap-around
+            (BRT > 0 && r > R-BRT && z > L-BRT &&
+             (r-R+BRT)*(r-R+BRT) + (z-L+BRT)*(z-L+BRT) > BRT*BRT)) {   // top bulletization
 	  bulk[z][r] = -1;               // value of v[*][z][r] is fixed...
 	  v[0][z][r] = v[1][z][r] = BV;  // at the bias voltage
 	}
@@ -693,6 +705,16 @@ int main(int argc, char **argv)
 
 
   if (WP == 0) return 0;
+  if (fully_depleted) {
+    /* save potential close to point contact,
+       to use later when calculating depletion voltage */
+    for (z=0; z<LC+2; z++) {
+      for (r=0; r<RC+2; r++) {
+        vsave[z][r] = fabs(v[new][z][r]);
+      }
+    }
+  }
+
   /*
     -------------------------------------------------------------------------
     now calculate the weighting potential for the central contact
@@ -753,7 +775,7 @@ int main(int argc, char **argv)
 
     L  = lrint(setup.xtal_length/grid);
     R  = lrint(setup.xtal_radius/grid);
-    // BRT = lrint(setup.top_bullet_radius/grid);
+    BRT = lrint(setup.top_bullet_radius/grid);
     // BRB = lrint(setup.bottom_bullet_radius/grid);
     LC = lrint(setup.pc_length/grid);
     dLC = setup.pc_length/grid - (float) LC;
@@ -853,7 +875,9 @@ int main(int argc, char **argv)
 	if (z == L ||
 	    r == R ||
 	    r >= z + R - LT ||       // taper
-	    (z == 0 && r >= RO)) {   // wrap-around
+	    (z == 0 && r >= RO) ||   // wrap-around
+            (BRT > 0 && r > R-BRT && z > L-BRT &&
+             (r-R+BRT)*(r-R+BRT) + (z-L+BRT)*(z-L+BRT) > BRT*BRT)) {   // top bulletization
 	  bulk[z][r] = -1;                 // value of v[*][z][r] is fixed...
 	  v[0][z][r] = v[1][z][r] = 0.0;   // to zero
 	}
@@ -1090,6 +1114,24 @@ int main(int argc, char **argv)
       fprintf(file, "\n");
     }
     fclose(file);
+  }
+
+  if (fully_depleted) {
+    /* estimate depletion voltage */
+    min = BV;
+    for (z=0; z<LC+2; z++) {
+      for (r=0; r<RC+2; r++) {
+        if (vsave[z][r] > 0 &&
+            min > vsave[z][r] / (1.0 - v[new][z][r])) {
+          min = vsave[z][r] / (1.0 - v[new][z][r]);
+          vminr = r;
+          vminz = z;
+        }
+      }
+    }
+    // printf("Min V, WP = %.4f, %.4f at (r,z) = (%d,%d)\n",
+    //        vsave[vminz][vminr], v[new][vminz][vminr], vminr, vminz);
+    printf("\nEstimated depletion voltage (or pinch-off?) = %.0f V\n", BV - min);
   }
 
   return 0;
