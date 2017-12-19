@@ -70,7 +70,7 @@ int main(int argc, char **argv)
   time_t t0=0, t1, t2=0;
   double esum, esum2, pi=3.14159, Epsilon=(8.85*16.0/1000.0);  // permittivity of Ge in pF/mm
   double pinched_sum1, pinched_sum2, *imp_ra, *imp_rm, *imp_z, S=0;
-  int    gridfact, fully_depleted=0, LL=L, RR=R, zmax, rmax, vminr=0, vminz=0;
+  int    gridfact, fully_depleted=0, LL=L, RR=R, zmax, rmax;
   double **vsave;
 
 
@@ -1124,13 +1124,9 @@ int main(int argc, char **argv)
         if (vsave[z][r] > 0 &&
             min > vsave[z][r] / (1.0 - v[new][z][r])) {
           min = vsave[z][r] / (1.0 - v[new][z][r]);
-          vminr = r;
-          vminz = z;
         }
       }
     }
-    // printf("Min V, WP = %.4f, %.4f at (r,z) = (%d,%d)\n",
-    //        vsave[vminz][vminr], v[new][vminz][vminr], vminr, vminz);
     printf("\nEstimated depletion voltage (or pinch-off?) = %.0f V\n", BV - min);
   }
 
